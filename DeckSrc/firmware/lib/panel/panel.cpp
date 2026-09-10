@@ -185,6 +185,10 @@ bool recover_scanout()
 {
     return display.bus.restartScanout();
 }
+bool scanout_state(int32_t &pos_px, uint32_t &min_eofs, uint32_t &max_eofs, uint32_t &corrections)
+{
+    return display.bus.scanoutState(&pos_px, &min_eofs, &max_eofs, &corrections);
+}
 
 uint32_t beam_clears_row_us(int y)
 {

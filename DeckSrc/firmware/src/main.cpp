@@ -58,6 +58,8 @@ uint32_t pending_at = 0;
 uint32_t vsync_ref_us = 0;
 uint32_t vsync_at = 0;
 uint32_t write_estimate_us = 2000;
+constexpr uint32_t WRITE_ESTIMATE_FLOOR_US = 1000;
+uint32_t page_draw_us = 0;  // the last full page redraw, for DISPLAY_STATE
 int image_w = 0;
 int image_h = 0;
 size_t cell_pixels = 0;
@@ -66,20 +68,24 @@ void resync_beam() {
     if (millis() - vsync_at < 200 && vsync_at) return;
     if (panel::wait_vsync()) { vsync_ref_us = micros(); vsync_at = millis(); }
 }
-void wait_for_cell(const keygrid::Rect &rect) {
+// Whether a region can be written now without tearing: the beam is far enough
+// above it for the write to finish first, or already past it with enough of the
+// frame left before it comes round again.
+bool cell_clear(const keygrid::Rect &rect) {
+    resync_beam();
     const uint32_t period = panel::frame_period_us();
-    const uint32_t deadline = micros() + period * 2;
-    do {
-        resync_beam();
-        const uint32_t phase = (micros() - vsync_ref_us) % period;
-        const int beam = static_cast<int>(static_cast<float>(phase) / period * panel::V_TOTAL) - panel::VSYNC_PULSE_WIDTH - panel::VSYNC_BACK_PORCH;
-        const int advance = static_cast<int>(static_cast<float>(write_estimate_us) / period * panel::V_TOTAL);
-        if (beam + advance < rect.y || (beam > rect.y + rect.h && panel::V_TOTAL - beam + rect.y > advance)) return;
-    } while (static_cast<int32_t>(deadline - micros()) > 0);
+    const uint32_t phase = (micros() - vsync_ref_us) % period;
+    const int beam = static_cast<int>(static_cast<float>(phase) / period * panel::V_TOTAL) - panel::VSYNC_PULSE_WIDTH - panel::VSYNC_BACK_PORCH;
+    const int advance = static_cast<int>(static_cast<float>(write_estimate_us) / period * panel::V_TOTAL);
+    return beam + advance < rect.y || (beam > rect.y + rect.h && panel::V_TOTAL - beam + rect.y > advance);
 }
-void draw_key(int cell, bool pressed) {
+void wait_for_cell(const keygrid::Rect &rect) {
+    const uint32_t deadline = micros() + panel::frame_period_us() * 2;
+    while (!cell_clear(rect) && static_cast<int32_t>(deadline - micros()) > 0) {}
+}
+// Writes a key into the framebuffer at once; callers wait for the beam first.
+void write_key(int cell, bool pressed) {
     const keygrid::Rect rect = keygrid::cell(cell);
-    wait_for_cell(rect);
     const uint32_t start = micros();
     if (active && active->complete) {
         // The protocol's uniform image size comes from cell 0. Actual openings may
@@ -87,11 +93,18 @@ void draw_key(int cell, bool pressed) {
         const bool alternate = (current_state & (1 << cell)) && active->alternates[cell];
         const uint16_t *source = alternate ? active->alternates[cell] : active->pixels + cell_pixels * cell;
         uint16_t *frame = panel::framebuffer();
+        // The divisions stay out of the pixel loop: the column map once per key,
+        // the source line once per row. A key as wide as the image - nearly all
+        // of them - copies each row with one memcpy. A division per pixel took
+        // a key 3 ms; the whole page redraw, 83 ms.
+        static uint16_t columns[panel::WIDTH];
+        const bool same_width = rect.w == image_w;
+        if (!same_width) for (int x = 0; x < rect.w; ++x) columns[x] = x * image_w / rect.w;
         for (int y = 0; y < rect.h; ++y) {
-            const int sy = y * image_h / rect.h;
-            for (int x = 0; x < rect.w; ++x) {
-                frame[(rect.y + y) * panel::WIDTH + rect.x + x] = source[sy * image_w + x * image_w / rect.w];
-            }
+            const uint16_t *line = source + (y * image_h / rect.h) * image_w;
+            uint16_t *target = frame + (rect.y + y) * panel::WIDTH + rect.x;
+            if (same_width) memcpy(target, line, rect.w * sizeof(uint16_t));
+            else for (int x = 0; x < rect.w; ++x) target[x] = line[columns[x]];
         }
         if (pressed && ((alternate ? active->alternate_lit : active->lit_mask) & (1 << cell))) panel::display.drawRoundRect(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2, 9, 0xFFFF);
     } else {
@@ -99,10 +112,36 @@ void draw_key(int cell, bool pressed) {
         panel::display.fillRect(rect.x, rect.y, rect.w, rect.h, 0x0000);
     }
     const uint32_t elapsed = micros() - start;
-    if (elapsed * 2 > write_estimate_us) write_estimate_us = elapsed * 2;
+    // Pessimistic, as tear-free writes need: twice the write, up at once after
+    // a slow one. It eases back down, or one slow write under PSRAM contention
+    // would narrow every later window for good.
+    const uint32_t sample = elapsed * 2;
+    if (sample > write_estimate_us) write_estimate_us = sample;
+    else write_estimate_us = max<uint32_t>(WRITE_ESTIMATE_FLOOR_US, write_estimate_us - (write_estimate_us - sample) / 16);
 }
+void draw_key(int cell, bool pressed) {
+    wait_for_cell(keygrid::cell(cell));
+    write_key(cell, pressed);
+}
+// Each key goes out the moment its row is clear of the scanout, in whatever
+// order that happens, rather than all fifteen waiting their turn in index order
+// (61 ms a page). Some row is always clear, so the copies - about 2 ms a key,
+// PSRAM to PSRAM beside the scanout - run nearly back to back. Past the
+// deadline the rest are written regardless, so a redraw can never hang.
 void draw_page() {
-    for (int cell = 0; cell < keygrid::COUNT; ++cell) draw_key(cell, false);
+    const uint32_t started = micros();
+    uint32_t remaining = (1u << keygrid::COUNT) - 1;
+    const uint32_t deadline = micros() + panel::frame_period_us() * 8;
+    while (remaining) {
+        const bool late = static_cast<int32_t>(deadline - micros()) <= 0;
+        for (int cell = 0; cell < keygrid::COUNT; ++cell) {
+            if (!(remaining & (1u << cell))) continue;
+            if (!late && !cell_clear(keygrid::cell(cell))) continue;
+            write_key(cell, false);
+            remaining &= ~(1u << cell);
+        }
+    }
+    page_draw_us = micros() - started;
 }
 // The center key's status: the logo, then a label, a progress bar, or both.
 // A label alone is a state ("Disconnected"); a bar alone is loading progress;
@@ -279,6 +318,10 @@ void command(const char *line) {
     if (strcmp(line,"ID") == 0) identify();
     else if(strcmp(line,"SDINFO")==0)wireless::reply().printf("OK storage card=%d bytes=%llu\n",artwork_store::available()?1:0,static_cast<unsigned long long>(artwork_store::capacity()));
     else if(strcmp(line,"DISPLAY_RESYNC")==0)wireless::reply().println(panel::recover_scanout()?"OK display realigned":"ERR display recovery failed");
+    // Scanout health: the bounce position at the last frame end (76800 when
+    // right), EOFs per frame since the last ask (10 when right), slipped
+    // pictures averted since boot, and the last page redraw in microseconds.
+    else if(strcmp(line,"DISPLAY_STATE")==0){int32_t pos=0;uint32_t low=0,high=0,fixed=0;if(panel::scanout_state(pos,low,high,fixed))wireless::reply().printf("OK display pos=%ld eofs=%lu..%lu corrected=%lu draw=%lu\n",static_cast<long>(pos),static_cast<unsigned long>(low),static_cast<unsigned long>(high),static_cast<unsigned long>(fixed),static_cast<unsigned long>(page_draw_us));else wireless::reply().println("ERR display state unavailable");}
     else if(strcmp(line,"PING")==0) wireless::reply().printf("OK ping online=%d\n",host_online?1:0);
     else if(strcmp(line,"BYE")==0){disconnected();wireless::reply().println("OK disconnected");}
     else if(strncmp(line,"UPDATING ",9)==0){
@@ -342,11 +385,4 @@ void setup() {
     // Disconnected, and the progress bar only appears once the desktop connects.
     panel::display.fillScreen(0); panel::present(); disconnected(); panel::backlight(true); initialized = true; artwork_store::begin(); wireless::reply().printf("BOOT decky %d\n", DECKY_PROTOCOL); wireless::begin();
 }
-// The host's warm-up streams every page through PSRAM and the SD card, the
-// heaviest traffic scanout meets; realign the panel once it is over.
-void realign_after_warmup() {
-    static bool was_warming = false;
-    if (was_warming && !warming) panel::recover_scanout();
-    was_warming = warming;
-}
-void loop() { if (!initialized) { vTaskDelay(100); return; } poll_serial(); resync_beam(); realign_after_warmup(); const bool updating=updating_until&&static_cast<int32_t>(updating_until-millis())>0;if(host_online&&!updating&&millis()-last_host_ms>HOST_TIMEOUT_MS)disconnected(); poll_touch(); vTaskDelay(1); }
+void loop() { if (!initialized) { vTaskDelay(100); return; } poll_serial(); resync_beam(); const bool updating=updating_until&&static_cast<int32_t>(updating_until-millis())>0;if(host_online&&!updating&&millis()-last_host_ms>HOST_TIMEOUT_MS)disconnected(); poll_touch(); vTaskDelay(1); }

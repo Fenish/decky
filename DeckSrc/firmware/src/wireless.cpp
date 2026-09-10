@@ -1,6 +1,4 @@
 #include "wireless.h"
-#include "panel.h"
-#include <atomic>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>
@@ -22,9 +20,6 @@ Stream *source=&Serial, *owner=&Serial;
 String secret, nonce, serial, joining_ssid, joining_password;
 bool authenticated=false, listening=false, joining=false;
 uint32_t client_at=0, join_at=0;
-std::atomic<bool> recovery_requested{false};
-bool realign_pending=false;
-uint32_t realign_at=0;
 char usb_line[256]={}, net_line[256]={};
 size_t usb_length=0, net_length=0;
 bool usb_overflow=false, net_overflow=false;
@@ -98,12 +93,10 @@ int read_network(uint8_t *buffer,size_t count){return secure.read(buffer,count);
 Stream &events(){return owner==&secure&&!authenticated?Serial:*owner;}
 void claim(){owner=source;}
 void begin(){
-    WiFi.onEvent([](WiFiEvent_t){recovery_requested.store(true);});
     uint8_t mac[6];esp_read_mac(mac,ESP_MAC_WIFI_STA);char id[13];snprintf(id,sizeof(id),"%02x%02x%02x%02x%02x%02x",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);serial=id;
     prefs.begin("decky-wifi",false);secret=prefs.getString("pair");if(secret.length()!=64){secret=random_hex();prefs.putString("pair",secret);}
     WiFi.persistent(false);WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.setAutoReconnect(true);
     const String ssid=prefs.getString("ssid");if(ssid.length())WiFi.begin(ssid.c_str(),prefs.getString("password").c_str());
-    recovery_requested.store(true);
 }
 bool handle(const char *line){
     if(strncmp(line,"WIFI_",5)!=0)return false;
@@ -116,7 +109,6 @@ bool handle(const char *line){
     if(strcmp(line,"WIFI_SCAN")==0){
         if(joining){reply().println("ERR wait for Wi-Fi connection");return true;}
         if(WiFi.scanComplete()!=WIFI_SCAN_RUNNING){WiFi.scanDelete();WiFi.scanNetworks(true);}
-        recovery_requested.store(true);
         reply().println("OK scanning");return true;
     }
     if(strcmp(line,"WIFI_LIST")==0){
@@ -131,23 +123,15 @@ bool handle(const char *line){
         if(sscanf(line,"WIFI_JOIN %64s %128s %c",ssid_hex,password_hex,&extra)!=2||!unhex(ssid_hex,ssid,32)||!ssid.length()||!unhex(password_hex,password,63)||(password.length()&&password.length()<8)){reply().println("ERR invalid Wi-Fi credentials");return true;}
         if(WiFi.scanComplete()==WIFI_SCAN_RUNNING){reply().println("ERR wait for scan to finish");return true;}
         joining_ssid=ssid;joining_password=password;joining=true;join_at=millis();
-        WiFi.disconnect();WiFi.begin(ssid.c_str(),password.c_str());recovery_requested.store(true);reply().println("OK connecting");return true;
+        WiFi.disconnect();WiFi.begin(ssid.c_str(),password.c_str());reply().println("OK connecting");return true;
     }
-    if(strcmp(line,"WIFI_FORGET")==0){prefs.remove("ssid");prefs.remove("password");joining=false;joining_password="";joining_ssid="";WiFi.disconnect(false,true);recovery_requested.store(true);reply().println("OK forgotten");return true;}
+    if(strcmp(line,"WIFI_FORGET")==0){prefs.remove("ssid");prefs.remove("password");joining=false;joining_password="";joining_ssid="";WiFi.disconnect(false,true);reply().println("OK forgotten");return true;}
     reply().println("ERR unknown Wi-Fi command");return true;
 }
 void poll(void (*command)(const char *)){
     read_commands(Serial,usb_line,usb_length,usb_overflow,command);
-    if(joining&&WiFi.status()==WL_CONNECTED){prefs.putString("ssid",joining_ssid);prefs.putString("password",joining_password);joining_password="";joining=false;recovery_requested.store(true);}
+    if(joining&&WiFi.status()==WL_CONNECTED){prefs.putString("ssid",joining_ssid);prefs.putString("password",joining_password);joining_password="";joining=false;}
     if(joining&&millis()-join_at>25000){joining=false;joining_password="";WiFi.disconnect();}
-    // Wi-Fi calibration and NVS commits disable the flash cache, which stalls
-    // the display's PSRAM refill and can slip scanout. Realign once, a second
-    // after the last Wi-Fi event or the end of a join - each realign can cost a
-    // frame, so not while the activity goes on. From task context, never from
-    // Wi-Fi's event task or the LCD ISR.
-    const uint32_t now=millis();
-    if(recovery_requested.exchange(false)||joining){realign_pending=true;realign_at=now+1000;}
-    if(realign_pending&&static_cast<int32_t>(now-realign_at)>=0){realign_pending=false;panel::recover_scanout();}
     if(WiFi.status()!=WL_CONNECTED){if(listening){server.end();udp.stop();client.stop();listening=false;}return;}
     if(!listening){server.begin();server.setNoDelay(true);udp.begin(DISCOVERY);listening=true;}
     if(udp.parsePacket()){

@@ -89,6 +89,11 @@ namespace lgfx
     uint8_t* getFrameBuffer(uint8_t index) const { return index < 2 ? _frame_buffers[index] : nullptr; }
     bool presentFrameBuffer(uint8_t* buffer, uint32_t timeout_ms = 50);
     bool restartScanout();
+    // The esp_lcd driver's bounce position at the last vertical sync, the
+    // spread of EOF interrupts per frame since the previous call, and how many
+    // frames ended on an odd count - each a slipped picture averted. False
+    // when the driver's private layout could not be confirmed at init.
+    bool scanoutState(int32_t* pos_px, uint32_t* min_eofs, uint32_t* max_eofs, uint32_t* corrections);
     void beginRead(void) override {}
     void endRead(void) override {}
     uint32_t readData(uint_fast8_t bit_length) override { return 0; }
@@ -100,6 +105,11 @@ namespace lgfx
     esp_lcd_panel_handle_t _panel_handle = nullptr;
     uint8_t* _frame_buffers[2] = { nullptr, nullptr };
     volatile uint32_t _vsync_count = 0;
+    void* _driver = nullptr;  // the driver's own panel state, once its layout is confirmed
+    volatile int32_t _seen_pos = -1;
+    volatile uint32_t _min_eofs = UINT32_MAX;
+    volatile uint32_t _max_eofs = 0;
+    volatile uint32_t _corrections = 0;
     static bool onVSync(esp_lcd_panel_handle_t panel,
                         const esp_lcd_rgb_panel_event_data_t* event_data,
                         void* user_context);

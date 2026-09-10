@@ -160,8 +160,13 @@ uint16_t *framebuffer();
  *       write a region only while the scanout is somewhere else.
  */
 bool wait_vsync(uint32_t timeout_ms = 50);
-// Schedule LCD/DMA realignment at the next vertical blank after flash writes.
+// Restart scanout from the first line at the next vertical blank, keeping the
+// picture. A slipped picture does not need it: the bus guards that per frame.
 bool recover_scanout();
+// Diagnostics: the display driver's bounce position at the last vertical sync,
+// EOF interrupts per frame since the last call, and slips averted since boot.
+// False when the driver's layout could not be confirmed.
+bool scanout_state(int32_t &pos_px, uint32_t &min_eofs, uint32_t &max_eofs, uint32_t &corrections);
 
 /**
  * @brief When the scanout beam clears a given pixel row.
