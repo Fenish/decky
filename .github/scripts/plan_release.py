@@ -167,8 +167,9 @@ def plan() -> dict[str, str]:
     notes = [
         f"Desktop app {dotted(version)} · Deck firmware {dotted(firmware_version)} ({state})",
         "",
-        "Windows: run the `Decky-Setup` installer. Update the deck from Decky: "
-        "Settings → Firmware → Check GitHub for updates, with the deck on USB.",
+        "Installed Decky updates itself: use the updates pill in the title bar, or Settings → "
+        "Updates. New installs: run the `Decky-Setup` installer. The deck's firmware updates "
+        "from the same place, with the deck on USB.",
         "",
         *section("Desktop", desktop),
         *section("Firmware", firmware),

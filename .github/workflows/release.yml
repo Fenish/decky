@@ -64,7 +64,7 @@ jobs:
           DECKY_BUNDLE_DIR: ${{ runner.temp }}/firmware
         run: pio run -d DeckSrc/firmware
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: firmware
           path: ${{ runner.temp }}/firmware/
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@v5
 
       # The installer carries the firmware it was released with.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           name: firmware
           path: DeckSrc/desktop/resources/firmware
@@ -109,17 +109,22 @@ jobs:
           pnpm run build
           pnpm exec electron-builder --win nsis --publish never
 
-      - uses: actions/upload-artifact@v5
+      # latest.yml and the blockmap are what an installed Decky's updater reads:
+      # the version, the installer's SHA-512, and the blocks for partial downloads.
+      - uses: actions/upload-artifact@v6
         with:
           name: installer
-          path: DeckSrc/desktop/dist/*.exe
+          path: |
+            DeckSrc/desktop/dist/*.exe
+            DeckSrc/desktop/dist/*.exe.blockmap
+            DeckSrc/desktop/dist/latest.yml
           if-no-files-found: error
 
   publish:
     needs: [plan, firmware, desktop]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           path: assets
           merge-multiple: true
