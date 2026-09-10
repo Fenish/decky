@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="132" viewBox="0 0 1200 132" role="img" aria-labelledby="title desc">
+  <title id="title">Decky at a glance</title>
+  <desc id="desc">15 touch keys, USB and Wi-Fi, local SD artwork, and a Windows desktop app.</desc>
+  <rect width="1200" height="132" rx="18" fill="#11110f"/>
+  <g stroke="#3b352b"><path d="M300 28v76M600 28v76M900 28v76"/></g>
+  <g fill="none" stroke="#d7bd8b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(32 46)"><path d="M0 0h60v34H0zM12 0v34M24 0v34M36 0v34M48 0v34M0 11h60M0 23h60"/></g>
+    <g transform="translate(332 46)"><path d="M2 7a33 33 0 0 1 48 0M10 17a21 21 0 0 1 32 0M19 27a9 9 0 0 1 14 0"/><circle cx="26" cy="35" r="2" fill="#d7bd8b"/></g>
+    <g transform="translate(636 42)"><path d="M8 0h24l12 12v34H4V5a5 5 0 0 1 4-5Z"/><path d="M15 0v14h17V0M13 30h23M13 37h15"/></g>
+    <g transform="translate(934 45)"><rect width="49" height="32" rx="4"/><path d="M24.5 32v10M13 42h23M8 23h33"/></g>
+  </g>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <g fill="#f0e6d5" font-size="21" font-weight="600"><text x="111" y="62">15 touch keys</text><text x="402" y="62">USB + Wi-Fi</text><text x="704" y="62">Local artwork</text><text x="1001" y="62">Windows app</text></g>
+    <g fill="#ada18d" font-size="13"><text x="111" y="85">A 5 × 3 canvas</text><text x="402" y="85">Your desk, connected</text><text x="704" y="85">Saved to microSD</text><text x="1001" y="85">Configure every key</text></g>
+  </g>
+</svg>
