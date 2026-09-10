@@ -1,0 +1,20 @@
+# Partition table for the deck.
+#
+# Elecrow's huge_app.csv gives the application 3 MB and leaves 896 KB for data.
+# The firmware uses about 1.2 MB, and the data area has to hold whatever images
+# and animations get pushed to the keys - which run to a few hundred KB each.
+# So the split is reversed: 2 MB for the application, still comfortable headroom,
+# and 1.9 MB for content.
+#
+# The data partition keeps the name and subtype "spiffs" even though LittleFS is
+# what mounts it: the Arduino LittleFS wrapper looks for that label by default.
+#
+# Changing this file requires a full upload (bootloader plus partition table),
+# not the app-only path in tools/flash.ps1, and it erases anything stored.
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x200000,
+spiffs,     data, spiffs,   0x210000, 0x1E0000,
+coredump,   data, coredump, 0x3F0000, 0x10000,
