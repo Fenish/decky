@@ -14,8 +14,8 @@
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "test": "vitest run",
-        "package": "npm run build && electron-builder --win dir",
-        "dist": "npm run build && electron-builder --win nsis",
+        "package": "npm run build && electron-builder --win dir && node scripts/package-check.mjs",
+        "dist": "npm run build && electron-builder --win nsis && node scripts/package-check.mjs",
         "test:ui": "npm run build && node scripts/ui-check.mjs",
         "test:visual": "npm run build && node scripts/visual-check.mjs",
         "test:connection": "npm run build && node scripts/disconnected-check.mjs"
