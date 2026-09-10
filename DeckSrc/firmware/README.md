@@ -36,14 +36,14 @@ flash as done only when it ends with `Hash of data verified`.
 
 From `partitions_deck.csv`:
 
-| Address    | Contents                               | Written by an install                      |
-| ---------- | -------------------------------------- | ------------------------------------------ |
-| `0x0`      | bootloader                             | yes                                        |
-| `0x8000` | partition table | yes; asks first if it changes, since a moved NVS loses the Wi-Fi settings |
-| `0x9000`   | NVS: Wi-Fi credentials, pairing secret | never                                      |
-| `0xE000`   | boot selector (`boot_app0.bin`)        | yes                                        |
-| `0x10000`  | application, 2 MB                      | yes                                        |
-| `0x210000` | data partition (unused by this firmware), then core dump | never |
+| Address    | Contents                                                 | Written by an install                                                     |
+| ---------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `0x0`      | bootloader                                               | yes                                                                       |
+| `0x8000`   | partition table                                          | yes; asks first if it changes, since a moved NVS loses the Wi-Fi settings |
+| `0x9000`   | NVS: Wi-Fi credentials, pairing secret                   | never                                                                     |
+| `0xE000`   | boot selector (`boot_app0.bin`)                          | yes                                                                       |
+| `0x10000`  | application, 2 MB                                        | yes                                                                       |
+| `0x210000` | data partition (unused by this firmware), then core dump | never                                                                     |
 
 PlatformIO also produces `firmware.factory.bin`, a merged image from `0x0`.
 Never install it over a working deck: it runs through NVS and erases the Wi-Fi
@@ -58,11 +58,15 @@ settings and pairing. Key artwork is stored on the microSD card
 - `scripts/firmware_version.py` stamps `DECKY_FW_VERSION`: the
   `DECKY_FW_VERSION` environment variable, else `git describe` against the
   newest `firmware-v*` tag, else `dev`. It appears as `fw=` in the `ID` reply.
+  The script writes it to a header in the build folder, rewritten only when it
+  changes, so a new version recompiles `main.cpp` alone (a compiler flag would
+  rebuild all ~200 files).
 - Releases are automatic: a push to `main` that changes firmware code gives the
   firmware a new version and publishes it next to the Windows installer
   (`.github/workflows/release.yml`). The firmware version only rises when
   firmware code changed; each rise is marked by a `firmware-v<x.y.z>` tag, so
-  run `git fetch --tags` for local builds to report it.
+  run `git fetch --tags` for local builds to report it. A release whose firmware
+  did not change carries the images released under that version, unrebuilt.
 
 ## Wi-Fi security
 

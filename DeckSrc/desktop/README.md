@@ -88,20 +88,21 @@ src/
     index.ts              Electron lifecycle and validated IPC orchestration
   preload/                Narrow contextBridge API
   renderer/
-    public/models/        Deck CAD model (OBJ) shown on the disconnected screen
+    public/models/        Deck CAD model (GLB) shown on the disconnected screen
     src/
       app/                Connection/session state, workspace orchestration and preview adapter
       components/         Shared icons
       features/
         editor/           Key/action and macro editors, optional starter layout
         artwork/          Import, adjustments, OFF/ON preview, RGB565 rendering
-        connection/       Smooth obsidian disconnected screen, actual OBJ and camera transition
+        connection/       Smooth obsidian disconnected screen, actual CAD model and camera transition
         dashboard/        Floating grid, sliding editor slot, pages/settings panels
         firmware/         Install progress, first install on the Disconnected page
       assets/             White SVG logo and generated artwork
       styles/             True-dark theme and responsive layout
 resources/                Application and tray icons
-scripts/                  Bounded UI, visual and hardware checks
+scripts/                  Bounded UI, visual and hardware checks; package-check.mjs checks the
+                          built package; convert-model.mjs makes the GLB from the CAD model
 tests/                    Configuration, persistence, wire timing, actions, toggles
 ```
 
@@ -182,6 +183,10 @@ floor.
 - `PING`: desktop heartbeat every four seconds, including while hidden in the tray. A 12-second
   lapse shows Disconnected; `BYE` does so immediately on quit.
 - `BOOT decky 7`: unsolicited reset event; triggers cache restoration again.
+- `UPDATING <0-100>` / `UPDATING END`: Decky on the PC is updating itself. The center key shows the
+  logo, "Updating Decky" and a progress bar; the deck keeps it up (instead of Disconnected, for up
+  to three minutes) while Decky closes for its installer, until the new version says `HELLO`. `END`
+  means the update stopped and the page returns.
 - `SDINFO`: mounted-card status and capacity. Commit/alternate replies report `stored=1` after
   successful persistence.
 - `PAGE <index> <CRC32>`: load a cached page or stage a transfer. `cached=1` skips uploading.
@@ -208,11 +213,11 @@ to swap it.
 
 ## Updates
 
-Decky checks GitHub for a newer release a few seconds after starting and then every 15 minutes,
-also while it sits in the tray. When Decky or the deck's firmware can be updated, the title bar
-shows a pill left of the connection dot, such as **2 updates available**; it opens Settings and
-scrolls to the Updates section, which lists the app and firmware versions and an update button for
-each. **Check GitHub for updates** checks at once.
+Decky checks GitHub for a newer release a few seconds after starting and then every 15 minutes, also
+while it sits in the tray. When Decky or the deck's firmware can be updated, the title bar shows a
+pill left of the connection dot, such as **2 updates available**; it opens Settings and scrolls to
+the Updates section, which lists the app and firmware versions and an update button for each.
+**Check GitHub for updates** checks at once.
 
 - **Decky itself:** an installed Decky updates in place. **Update Decky** opens an update screen
   over the window: electron-updater downloads the newest release's installer with progress (it can
@@ -220,8 +225,12 @@ each. **Check GitHub for updates** checks at once.
   installer closes Decky and opens the new version. Keys, pages and pairing live in `%APPDATA%` and
   are kept. If the update fails, Decky keeps running and the screen offers the installer instead. A
   development build cannot replace itself and offers the download instead. `src/main/app-update.ts`
-  holds the flow; the release carries `latest.yml` for it. Releases have no blockmap, to keep their file list to
-  the installer, `latest.yml` and the firmware zip, so every update downloads the whole installer.
+  holds the flow; the release carries `latest.yml` and the installer's `.blockmap` for it. Updates
+  are differential: every installer leaves a copy of itself in `%LOCALAPPDATA%\decky-updater`, and
+  electron-updater fetches only the blocks that differ from it - about 3 MB of the 101 MB installer
+  for an app-only change. When the copy or a blockmap is missing, it downloads the whole installer.
+- **On the deck:** while Decky updates itself the deck shows "Updating Decky" with the download's
+  progress, and keeps showing it through the restart, until the new version connects.
 - **Firmware:** covered below; it updates from the same section.
 
 ## Firmware
@@ -250,27 +259,29 @@ Decky installs the deck's firmware itself, over USB.
 copies the images and `manifest.json` into `resources/firmware/`, which is gitignored and packed
 into the installer. The manifest lists each image's address, size, SHA-256 and MD5, the firmware
 version and the protocol number; packages that would touch NVS or the data partition are rejected
-before anything is written. Every GitHub release carries them zipped, as `decky-firmware-<version>.zip`, next to
-the Windows installer; the app downloads the zip when a new release appears, checks every image,
-and reads the firmware version from the manifest inside. The app checks
-the repository named in package.json's `repository` field (`github:Fenish/decky`); the release
-workflow overwrites it with the repository it runs in, so a fork's installer checks the fork. Without
-the field, checking GitHub is unavailable.
+before anything is written. Every GitHub release carries them zipped, as
+`decky-firmware-<version>.zip`, next to the Windows installer; the app downloads the zip when a new
+release appears, checks every image, and reads the firmware version from the manifest inside. The
+app checks the repository named in package.json's `repository` field (`github:Fenish/decky`); the
+release workflow overwrites it with the repository it runs in, so a fork's installer checks the
+fork. Without the field, checking GitHub is unavailable.
 
 **Releases.** `../../.github/workflows/release.yml` runs on every push to `main`. When firmware or
 desktop sources changed since the last release (tools, scripts, tests and notes do not count), it
-builds the firmware and the installer and publishes both as one release, `v<version>`. Versions count
-up by themselves: the patch number by default, `[minor]` or `[major]` in a commit's first line for a
-bigger step, and `[skip release]` holds a push back until the next release. Raising `version` in
-package.json sets the next number. The rules live in `../../.github/scripts/plan_release.py`; run it
-from the repository root for a dry run. Release notes come from the commit messages.
+builds the firmware and the installer and publishes both as one release, `v<version>`. Unchanged
+firmware is not rebuilt: the release carries the images already released under that version. The
+build fails if `scripts/package-check.mjs` finds a built file missing from the package. Versions
+count up by themselves: the patch number by default, `[minor]` or `[major]` in a commit's first line
+for a bigger step, and `[skip release]` holds a push back until the next release. Raising `version`
+in package.json sets the next number. The rules live in `../../.github/scripts/plan_release.py`; run
+it from the repository root for a dry run. Release notes come from the commit messages.
 
-**Versions.** The app is stamped with the release version. The firmware keeps its own version,
-which only rises when firmware code changed; each rise is marked by a `firmware-v<x.y.z>` tag, which
-local builds read through `git describe` (else `dev`). The protocol number lives only in
-`../firmware/include/decky_version.h`. An update is offered for a newer protocol, or a newer firmware
-version at the same protocol, so a desktop-only release never asks anyone to reflash; development
-builds are never offered an older release.
+**Versions.** The app is stamped with the release version. The firmware keeps its own version, which
+only rises when firmware code changed; each rise is marked by a `firmware-v<x.y.z>` tag, which local
+builds read through `git describe` (else `dev`). The protocol number lives only in
+`../firmware/include/decky_version.h`. An update is offered for a newer protocol, or a newer
+firmware version at the same protocol, so a desktop-only release never asks anyone to reflash;
+development builds are never offered an older release.
 
 For flashing without the app, `../firmware/tools/flash.ps1` builds and writes the application (add
 `-Full` for all four images). Use 460800 baud and `PYTHONIOENCODING=utf-8`; a flash succeeded only
@@ -283,14 +294,16 @@ Interaction references:
 [Multi Actions](https://help.elgato.com/hc/en-us/articles/360027960912-Elgato-Stream-Deck-Multi-Actions),
 and
 [folders](https://www.elgato.com/us/en/explorer/products/stream-deck/how-to-use-folders-stream-deck/).
-Model loading uses [Three.js OBJLoader](https://threejs.org/docs/pages/OBJLoader.html). The layout
+Model loading uses [Three.js GLTFLoader](https://threejs.org/docs/pages/GLTFLoader.html). The layout
 and visuals are Decky's own.
 
-The title-bar logo is `Branding/logo.svg`, rendered white, and the disconnected screen's model
-is `3D Models/StreamDeck_CAD.obj`. The app uses copies of both; the originals are not modified. The
-app, taskbar, installer and tray icon come from `Branding/logo-app.png`:
-`node scripts/build-icons.mjs` trims its transparent margin and writes `resources/icon.png` and the
-multi-size `resources/icon.ico` (16–256 px).
+The title-bar logo is `Branding/logo.svg`, rendered white, and the disconnected screen's model is
+`3D Models/StreamDeck_CAD.obj`; the originals are not modified. The app uses a copy of the logo and
+a GLB of the model: `node scripts/convert-model.mjs` rewrites `public/models/decky.glb` from the OBJ
+with the same vertices. (electron-builder leaves `*.obj` files out of the package, and the GLB loads
+without parsing 6 MB of text.) The app, taskbar, installer and tray icon come from
+`Branding/logo-app.png`: `node scripts/build-icons.mjs` trims its transparent margin and writes
+`resources/icon.png` and the multi-size `resources/icon.ico` (16–256 px).
 
 ## Connection flow
 
