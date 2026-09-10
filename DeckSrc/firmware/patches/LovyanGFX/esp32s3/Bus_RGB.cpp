@@ -142,10 +142,21 @@ namespace lgfx
 
   bool Bus_RGB::restartScanout()
   {
-    // Flash/NVS operations can stall the PSRAM bounce-buffer interrupt and
-    // leave LCD and DMA positions different. Restart at the driver's next
-    // vertical blank, keeping the same framebuffer and measured timings.
-    return _panel_handle && esp_lcd_rgb_panel_restart(_panel_handle) == ESP_OK;
+    // A full restart of scanout: stop and reset the LCD engine, rewind the
+    // bounce buffers to the frame's first line, refill both, start again. The
+    // framebuffer is kept, so the picture itself does not change.
+    //
+    // esp_lcd_rgb_panel_restart() cannot do this here. This framework sets
+    // CONFIG_LCD_RGB_RESTART_IN_VSYNC, under which that call is a no-op, and
+    // the per-frame restart the option runs only rewinds the DMA: a bounce
+    // position that slipped - under flash writes or heavy PSRAM traffic, at
+    // power-up for instance - stays slipped, and the whole picture shows
+    // wrapped vertically until a reset. esp_lcd_panel_init() runs the driver's
+    // full start again and only rewrites registers, so it is safe on a running
+    // panel. It runs right after a vertical sync, so any glitch is one frame.
+    if (_panel_handle == nullptr) { return false; }
+    waitVSync(50);
+    return esp_lcd_panel_init(_panel_handle) == ESP_OK;
   }
 
   void Bus_RGB::release(void)

@@ -23,7 +23,8 @@ String secret, nonce, serial, joining_ssid, joining_password;
 bool authenticated=false, listening=false, joining=false;
 uint32_t client_at=0, join_at=0;
 std::atomic<bool> recovery_requested{false};
-uint32_t recovery_until=0, last_recovery=0;
+bool realign_pending=false;
+uint32_t realign_at=0;
 char usb_line[256]={}, net_line[256]={};
 size_t usb_length=0, net_length=0;
 bool usb_overflow=false, net_overflow=false;
@@ -139,11 +140,14 @@ void poll(void (*command)(const char *)){
     read_commands(Serial,usb_line,usb_length,usb_overflow,command);
     if(joining&&WiFi.status()==WL_CONNECTED){prefs.putString("ssid",joining_ssid);prefs.putString("password",joining_password);joining_password="";joining=false;recovery_requested.store(true);}
     if(joining&&millis()-join_at>25000){joining=false;joining_password="";WiFi.disconnect();}
-    // Wi-Fi calibration/NVS commits may temporarily disable the flash cache.
-    // Recover from task context, never from Wi-Fi's event task or the LCD ISR.
+    // Wi-Fi calibration and NVS commits disable the flash cache, which stalls
+    // the display's PSRAM refill and can slip scanout. Realign once, a second
+    // after the last Wi-Fi event or the end of a join - each realign can cost a
+    // frame, so not while the activity goes on. From task context, never from
+    // Wi-Fi's event task or the LCD ISR.
     const uint32_t now=millis();
-    if(recovery_requested.exchange(false))recovery_until=now+1000;
-    if((joining||static_cast<int32_t>(recovery_until-now)>0)&&now-last_recovery>=100){panel::recover_scanout();last_recovery=now;}
+    if(recovery_requested.exchange(false)||joining){realign_pending=true;realign_at=now+1000;}
+    if(realign_pending&&static_cast<int32_t>(now-realign_at)>=0){realign_pending=false;panel::recover_scanout();}
     if(WiFi.status()!=WL_CONNECTED){if(listening){server.end();udp.stop();client.stop();listening=false;}return;}
     if(!listening){server.begin();server.setNoDelay(true);udp.begin(DISCOVERY);listening=true;}
     if(udp.parsePacket()){

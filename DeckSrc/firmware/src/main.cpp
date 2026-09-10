@@ -44,10 +44,8 @@ bool initialized = false;
 bool host_online = false;
 bool warming = false;
 bool showing_status = false;
-bool offline_shown = false;
 bool pending_activate = true;
 uint32_t last_host_ms = 0;
-uint32_t boot_at_ms = 0;
 int warm_total = 15;
 int warm_done = 0;
 constexpr uint32_t HOST_TIMEOUT_MS = 12000;
@@ -122,7 +120,7 @@ void warm_progress() {
 }
 void disconnected() {
     host_online=false;warming=false;transitioning=false;pending=nullptr;pressed_cell=-1;
-    show_status(0,true);offline_shown=true;
+    show_status(0,true);
 }
 void identify() {
     uint8_t mac[6] = {0}; esp_read_mac(mac, ESP_MAC_WIFI_STA);
@@ -137,7 +135,7 @@ uint32_t crc32(const uint8_t *data, size_t length) {
     return crc ^ 0xFFFFFFFF;
 }
 void begin_page(int id, uint32_t signature, bool cache_only = false) {
-    host_online=true;offline_shown=false;last_host_ms=millis();
+    host_online=true;last_host_ms=millis();
     if (id < 0 || id >= MAX_PAGES) { wireless::reply().println("ERR invalid page"); return; }
     for (auto &page : cache) {
         if (page.id == id && page.signature == signature && page.complete) {
@@ -258,7 +256,7 @@ void select_state(int id,uint32_t signature,unsigned int mask){
     const uint16_t changed=(current_state^mask)|page->artwork_dirty;
     page->artwork_dirty=0;
     active=page;current_page=id;current_state=mask;page->used=millis();
-    host_online=true;offline_shown=false;warming=false;showing_status=false;transitioning=false;
+    host_online=true;warming=false;showing_status=false;transitioning=false;
     if(full)draw_page();else for(int cell=0;cell<keygrid::COUNT;++cell)if(changed&(1<<cell))draw_key(cell,cell==pressed_cell);
     wireless::reply().printf("OK state %d mask=%u cells=%d\n",id,mask,full?keygrid::COUNT:__builtin_popcount(changed));
 }
@@ -272,7 +270,7 @@ void command(const char *line) {
     else if(strcmp(line,"DISPLAY_RESYNC")==0)wireless::reply().println(panel::recover_scanout()?"OK display realigned":"ERR display recovery failed");
     else if(strcmp(line,"PING")==0) wireless::reply().printf("OK ping online=%d\n",host_online?1:0);
     else if(strcmp(line,"BYE")==0){disconnected();wireless::reply().println("OK disconnected");}
-    else if(strncmp(line,"HELLO ",6)==0){const int count=sscanf(line,"HELLO %d %d %c",&page,&units,&extra);if((count!=1&&count!=2)||page<1||page>CACHE_SLOTS||(count==2&&(units<page*keygrid::COUNT||units>page*keygrid::COUNT*2))){wireless::reply().println("ERR cache capacity exceeded");return;}host_online=true;offline_shown=false;warming=true;transitioning=true;warm_total=count==2?units:page*keygrid::COUNT;warm_done=0;pending=nullptr;show_status(15);wireless::reply().println("OK warming");}
+    else if(strncmp(line,"HELLO ",6)==0){const int count=sscanf(line,"HELLO %d %d %c",&page,&units,&extra);if((count!=1&&count!=2)||page<1||page>CACHE_SLOTS||(count==2&&(units<page*keygrid::COUNT||units>page*keygrid::COUNT*2))){wireless::reply().println("ERR cache capacity exceeded");return;}host_online=true;warming=true;transitioning=true;warm_total=count==2?units:page*keygrid::COUNT;warm_done=0;pending=nullptr;show_status(15);wireless::reply().println("OK warming");}
     else if(sscanf(line,"ALT %d %u %d %u %u %c",&page,&signature,&cell,&bytes,&checksum,&extra)==5)alternate_image(page,signature,cell,bytes,checksum);
     else if(sscanf(line,"STATE %d %u %u %c",&page,&signature,&mask,&extra)==3)select_state(page,signature,mask);
     else if(sscanf(line,"CACHE %d %u %c",&page,&signature,&extra)==2)begin_page(page,signature,true);
@@ -321,6 +319,15 @@ void setup() {
     Serial.begin(460800); delay(200); wireless::reply().println("\nDecky v6 - connect the desktop to load your workspace");
     panel::touch_bus_scan(); if (!panel::begin()) return;
     const keygrid::Rect first = keygrid::cell(0); image_w = first.w; image_h = first.h; cell_pixels = image_w * image_h;
-    panel::display.fillScreen(0); panel::present(); show_status(5); panel::backlight(true); initialized = true; boot_at_ms=millis(); artwork_store::begin(); show_status(15); wireless::reply().printf("BOOT decky %d\n", DECKY_PROTOCOL); wireless::begin();
+    // Until a desktop says HELLO there is nothing to load: the deck starts out
+    // Disconnected, and the progress bar only appears once the desktop connects.
+    panel::display.fillScreen(0); panel::present(); disconnected(); panel::backlight(true); initialized = true; artwork_store::begin(); wireless::reply().printf("BOOT decky %d\n", DECKY_PROTOCOL); wireless::begin();
 }
-void loop() { if (!initialized) { vTaskDelay(100); return; } poll_serial(); resync_beam(); if((host_online&&millis()-last_host_ms>HOST_TIMEOUT_MS)||(!host_online&&!offline_shown&&millis()-boot_at_ms>8000))disconnected(); poll_touch(); vTaskDelay(1); }
+// The host's warm-up streams every page through PSRAM and the SD card, the
+// heaviest traffic scanout meets; realign the panel once it is over.
+void realign_after_warmup() {
+    static bool was_warming = false;
+    if (was_warming && !warming) panel::recover_scanout();
+    was_warming = warming;
+}
+void loop() { if (!initialized) { vTaskDelay(100); return; } poll_serial(); resync_beam(); realign_after_warmup(); if(host_online&&millis()-last_host_ms>HOST_TIMEOUT_MS)disconnected(); poll_touch(); vTaskDelay(1); }
