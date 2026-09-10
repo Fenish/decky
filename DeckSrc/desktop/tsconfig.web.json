@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+        "composite": true,
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "jsx": "react-jsx",
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "skipLibCheck": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "types": ["vite/client"]
+    },
+    "include": [
+        "src/renderer/src/**/*.ts",
+        "src/renderer/src/**/*.tsx",
+        "src/renderer/src/vite-env.d.ts",
+        "src/shared/**/*.ts"
+    ]
+}

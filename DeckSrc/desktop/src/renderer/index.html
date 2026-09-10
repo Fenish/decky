@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <!--
+            The renderer loads nothing from the network and evaluates nothing it
+            was not built with. Stated explicitly so a mistake later has to be
+            deliberate.
+        -->
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"
+        />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Decky</title>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script type="module" src="/src/main.tsx"></script>
+    </body>
+</html>

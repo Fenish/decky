@@ -1,0 +1,102 @@
+import { duplicateKey, moveKey } from "../../../shared/key-layout";
+import type { DeckApi } from "../../../shared/api";
+import { createConfig, validateConfig } from "../../../shared/config";
+// Browser previews use their own storage. Native actions remain unavailable there.
+export function installPreviewBridge(): void {
+    if (window.deck) return;
+    let config = createConfig();
+    try {
+        const saved: unknown = JSON.parse(localStorage.getItem("decky-preview") ?? "null");
+        validateConfig(saved);
+        config = saved;
+    } catch {
+        /* First preview. */
+    }
+    const unavailable = async () => ({
+        ok: false,
+        message: "Open Decky desktop to use device and system actions.",
+    });
+    let maximized = false;
+    const api: DeckApi = {
+        wifiStatus: async () => ({
+            available: false,
+            transport: null,
+            state: "unconfigured",
+            ssid: "",
+            ip: "",
+            paired: false,
+        }),
+        wifiScan: async () => [],
+        wifiJoin: unavailable,
+        wifiForget: unavailable,
+        firmwareInfo: async () => ({
+            appVersion: "preview",
+            installed: null,
+            transport: null,
+            bundled: null,
+            latest: null,
+            repository: null,
+            update: null,
+        }),
+        firmwareCheck: async () => ({
+            appVersion: "preview",
+            installed: null,
+            transport: null,
+            bundled: null,
+            latest: null,
+            repository: null,
+            update: null,
+        }),
+        firmwareProbe: async () => {
+            throw new Error("Open Decky desktop to check devices.");
+        },
+        firmwareInstall: unavailable,
+        onFirmwareProgress: () => () => {},
+        cachePages: unavailable,
+        moveKey: async (from, to) => {
+            config = moveKey(config, from, to).config;
+            localStorage.setItem("decky-preview", JSON.stringify(config));
+            return structuredClone(config);
+        },
+        duplicateKey: async (from) => {
+            const result = duplicateKey(config, from);
+            config = result.config;
+            localStorage.setItem("decky-preview", JSON.stringify(config));
+            return { config: structuredClone(config), cell: result.cell };
+        },
+        listPrograms: async () => [],
+        programIcon: async () => null,
+        getWindowState: async () => ({ maximized }),
+        windowAction: async (action) => {
+            if (action === "maximize") maximized = !maximized;
+            return { maximized };
+        },
+        onWindowState: () => () => {},
+        getKeyStates: async () => ({}),
+        onKeyStates: () => () => {},
+        status: async () => ({ connected: false }),
+        getConfig: async () => structuredClone(config),
+        saveConfig: async (next) => {
+            validateConfig(next);
+            localStorage.setItem("decky-preview", JSON.stringify(next));
+            config = next;
+            return structuredClone(config);
+        },
+        navigate: async (pageId) => {
+            config = { ...config, activePageId: pageId };
+            return structuredClone(config);
+        },
+        runKey: unavailable,
+        syncPage: unavailable,
+        exportConfig: unavailable,
+        importConfig: async () => null,
+        pickTarget: async () => {
+            throw new Error("File selection is available in Decky desktop.");
+        },
+        cancel: async () => {},
+        onEvent: () => () => {},
+        onConfig: () => () => {},
+        onActivity: () => () => {},
+    };
+    window.deck = api;
+}

@@ -1,0 +1,146 @@
+.custom-titlebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 66px;
+    display: flex;
+    align-items: center;
+    z-index: 50;
+    user-select: none;
+    -webkit-app-region: drag;
+    padding-left: 30px;
+    background: linear-gradient(#0002, transparent);
+    color: #f4f3ef;
+}
+.titlebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    pointer-events: none;
+}
+.titlebar-brand > svg {
+    width: 27px;
+    height: 29px;
+    display: block;
+    color: #fff;
+}
+.titlebar-brand > span {
+    font-size: 24px;
+    font-weight: 550;
+    letter-spacing: -0.6px;
+}
+.titlebar-drag {
+    flex: 1;
+    align-self: stretch;
+}
+.titlebar-status {
+    -webkit-app-region: no-drag;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 23px;
+    align-self: stretch;
+}
+.titlebar-status > span {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a79c82;
+}
+.titlebar-status > span.online {
+    background: #b8d4a0;
+}
+.titlebar-transport {
+    margin-left: 8px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: #a79c82;
+}
+.titlebar-status > span.syncing {
+    animation: titlebar-sync 1s ease-in-out infinite alternate;
+}
+.window-controls {
+    display: flex;
+    align-self: stretch;
+    align-items: flex-start;
+    -webkit-app-region: no-drag;
+    padding-top: 9px;
+    padding-right: 8px;
+}
+.window-controls > button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 40px;
+    color: #ddd9d0;
+    border-radius: 5px;
+    -webkit-app-region: no-drag;
+}
+.window-controls > button:hover {
+    background: #ffffff10;
+    color: #fff;
+}
+.window-controls > button.window-close:hover {
+    background: #ac3833;
+    color: #fff;
+}
+.window-controls > button:focus-visible {
+    outline: 1px solid #f4e5c8;
+    outline-offset: -5px;
+}
+.dashboard-header-spacer {
+    height: 70px;
+    flex-shrink: 0;
+}
+.panel-close {
+    margin-left: auto;
+}
+.editor-heading h2 {
+    flex: 1;
+}
+.step-type:focus-within {
+    outline: 1px solid #e4d3b0;
+    border-radius: 4px;
+}
+@keyframes titlebar-sync {
+    to {
+        opacity: 0.35;
+    }
+}
+@media (max-height: 820px) {
+    .custom-titlebar {
+        height: 56px;
+    }
+    .dashboard-header-spacer {
+        height: 56px;
+    }
+    .window-controls {
+        padding-top: 6px;
+    }
+}
+.custom-titlebar {
+    isolation: isolate;
+}
+.custom-titlebar:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: min(470px, 46vw);
+    height: 105px;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(
+        ellipse at 0 0,
+        #000000e0 0%,
+        #000000a0 34%,
+        #00000045 56%,
+        transparent 76%
+    );
+}
+.titlebar-brand > span {
+    text-shadow: 0 1px 7px #0009;
+}

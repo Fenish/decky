@@ -1,0 +1,167 @@
+.disconnected-screen {
+    position: fixed;
+    inset: 0;
+    isolation: isolate;
+    overflow: hidden;
+    background: #050505;
+    color: #eeeae3;
+    min-width: 0;
+}
+.disconnected-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+    user-select: none;
+}
+/* Keep the same 3:2 composition at any window aspect ratio. */
+.disconnected-scene {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100vw, 150vh);
+    height: max(100vh, 66.666667vw);
+    transform: translate(-50%, -50%);
+    container-type: size;
+}
+.disconnected-stage {
+    position: absolute;
+    left: 50%;
+    top: 43%;
+    width: 34%;
+    height: 34%;
+    transform: translate(-50%, -50%);
+    transition:
+        top 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+        width 1.05s cubic-bezier(0.4, 0, 0.2, 1),
+        height 1.05s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.disconnected-model {
+    position: absolute;
+    inset: 0;
+}
+.disconnected-model canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.disconnected-model.ready canvas {
+    opacity: 1;
+}
+.disconnected-model-fallback {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+.disconnected-model.ready .disconnected-model-fallback {
+    display: none;
+}
+.disconnected-shadow {
+    position: absolute;
+    left: 17%;
+    top: 38%;
+    width: 67%;
+    height: 42%;
+    background: #000;
+    opacity: 0.8;
+    filter: blur(20px);
+    border-radius: 50%;
+    transform: rotate(16deg) translate(0, 35px);
+    transition: opacity 0.6s;
+}
+.disconnected-connect {
+    position: absolute;
+    left: 50%;
+    top: 60.7%;
+    transform: translateX(-50%);
+    transition:
+        opacity 0.35s ease,
+        translate 0.35s ease;
+}
+.disconnected-connect h1 {
+    font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+    font-size: 2.65cqw;
+    font-weight: 300;
+    letter-spacing: -0.035cqw;
+    line-height: 1.12;
+    color: #c5c2bc;
+    white-space: nowrap;
+    margin: 0;
+}
+.disconnected-connect h1 strong {
+    font-weight: 550;
+    color: #edeae3;
+}
+.disconnected-screen.is-entering .disconnected-connect {
+    opacity: 0;
+    translate: 0 -8px;
+}
+.disconnected-screen.is-entering .disconnected-stage {
+    top: 50%;
+}
+.disconnected-screen.is-entering .disconnected-shadow {
+    opacity: 0;
+}
+.disconnected-screen.is-zooming .disconnected-stage {
+    width: 100%;
+    height: 100%;
+}
+.connection-announcement {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+.app-shell[hidden] {
+    display: none !important;
+}
+.app-shell[data-entered="true"]:not([hidden]) {
+    animation: dashboard-arrive 0.25s ease-out both;
+}
+@keyframes dashboard-arrive {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@media (max-aspect-ratio: 1/1) {
+    .disconnected-stage {
+        width: 38%;
+        height: 38%;
+    }
+    .disconnected-connect {
+        top: 63%;
+    }
+    .disconnected-connect h1 {
+        font-size: 3.2cqw;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .disconnected-model canvas,
+    .disconnected-stage,
+    .disconnected-connect,
+    .disconnected-shadow {
+        transition: none;
+    }
+    .app-shell[data-entered="true"]:not([hidden]) {
+        animation: none;
+    }
+}
+
+.disconnected-screen:not(.is-entering) .disconnected-stage {
+    transition: none;
+}

@@ -1,0 +1,111 @@
+.firmware-progress p {
+    color: #eee8da;
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 12px 0 8px;
+}
+.firmware-progress .firmware-hint {
+    color: #b7ae9b;
+    font-size: 11px;
+    margin: 8px 0 0;
+}
+.firmware-bar {
+    position: relative;
+    height: 5px;
+    border-radius: 3px;
+    background: #3a3a32;
+    overflow: hidden;
+}
+.firmware-bar > span {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: 3px;
+    background: #eee2cb;
+    transition: width 0.2s ease;
+}
+/* Stages without a byte count - downloading, the bootloader handshake - still move. */
+.firmware-bar.indeterminate > span {
+    width: 35%;
+    animation: firmware-sweep 1.2s ease-in-out infinite;
+}
+@keyframes firmware-sweep {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(290%);
+    }
+}
+.firmware-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.firmware-error {
+    color: #e6b39a;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+/* The Disconnected page's offer, under "Connect Decky". */
+.first-install {
+    position: absolute;
+    left: 50%;
+    bottom: 9%;
+    transform: translateX(-50%);
+    width: min(420px, calc(100vw - 48px));
+    padding: 16px 18px;
+    border: 1px solid #dfd2b35c;
+    border-top-color: #efe6d18a;
+    border-radius: 16px;
+    background: linear-gradient(145deg, #24231d70, #090909e6 45%);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 10px 30px #0006;
+    color: #eee8da;
+    text-align: center;
+    z-index: 2;
+}
+.first-install > p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #d6d0c3;
+}
+.first-install .firmware-actions {
+    justify-content: center;
+}
+.first-install .firmware-progress p:first-child {
+    margin-top: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+    .firmware-bar.indeterminate > span {
+        animation: none;
+        width: 100%;
+        opacity: 0.45;
+    }
+}
+
+/* App and firmware versions, side by side in the Firmware section. */
+.firmware-versions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 12px 0 0;
+}
+.firmware-versions > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+}
+.firmware-versions dt {
+    color: #b7ae9b;
+}
+.firmware-versions dd {
+    margin: 0;
+    color: #eee8da;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
