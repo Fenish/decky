@@ -3,9 +3,11 @@
 # Every push to main runs .github/scripts/plan_release.py. When product code
 # changed since the last release - firmware or desktop sources, not tools,
 # scripts, tests or notes - this builds the deck firmware and the Windows
-# installer and publishes both in one release, v<version>. Version numbers count
-# up by themselves; the script documents the rules and the [minor], [major] and
-# [skip release] markers a commit message can carry.
+# installer and publishes both in one release, v<version>. Firmware that did not
+# change is not rebuilt: the release carries the images already released under
+# that firmware version. Version numbers count up by themselves; the script
+# documents the rules and the [minor], [major] and [skip release] markers a
+# commit message can carry.
 
 name: Release
 
@@ -48,21 +50,70 @@ jobs:
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Unchanged firmware ships the images already released under its version:
+      # one version number is always one exact image, and the release skips the
+      # build. Anything unexpected here falls through to building.
+      - name: Reuse the released firmware
+        id: reuse
+        if: needs.plan.outputs.firmware_bumped == 'false'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRMWARE: ${{ needs.plan.outputs.firmware_version }}
+          BUNDLE: ${{ runner.temp }}/firmware
+        run: |
+          name="decky-firmware-$FIRMWARE.zip"
+          tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq "[.[] | select(any(.assets[]; .name == \"$name\"))][0].tag_name // empty")
+          if [ -z "$tag" ]; then echo "No release carries $name"; exit 1; fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/$name" -d "$BUNDLE"
+          python3 - "$BUNDLE" "$FIRMWARE" <<'EOF'
+          import hashlib, json, pathlib, sys
+          bundle, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+          manifest = json.loads((bundle / "manifest.json").read_text())
+          assert manifest["version"] == version, f"the zip holds {manifest['version']}"
+          for part in manifest["parts"]:
+              digest = hashlib.sha256((bundle / part["file"]).read_bytes()).hexdigest()
+              assert digest == part["sha256"], f"{part['file']} does not match its manifest"
+          EOF
+          echo "Firmware $FIRMWARE reused from $tag"
+
       - uses: actions/checkout@v5
+        if: steps.reuse.outcome != 'success'
 
       - uses: actions/setup-python@v6
+        id: python
+        if: steps.reuse.outcome != 'success'
         with:
           python-version: "3.12"
 
+      # The platform, toolchain, framework and libraries took 2.5 minutes to
+      # download and unpack on every build. platformio.ini pins all of them, and
+      # PlatformIO's own Python environment only works with the exact Python.
+      # .cache holds the downloaded archives, useless once they are unpacked.
+      - uses: actions/cache@v6
+        if: steps.reuse.outcome != 'success'
+        with:
+          path: |
+            ~/.platformio
+            !~/.platformio/.cache
+            DeckSrc/firmware/.pio/libdeps
+          key: platformio-${{ runner.os }}-python${{ steps.python.outputs.python-version }}-${{ hashFiles('DeckSrc/firmware/platformio.ini') }}
+
       - name: Install PlatformIO
+        if: steps.reuse.outcome != 'success'
         run: pip install platformio
 
       - name: Build firmware
+        if: steps.reuse.outcome != 'success'
         env:
           DECKY_FW_VERSION: ${{ needs.plan.outputs.firmware_version }}
           # scripts/bundle_for_desktop.py writes manifest.json and the images here.
           DECKY_BUNDLE_DIR: ${{ runner.temp }}/firmware
-        run: pio run -d DeckSrc/firmware
+        run: |
+          rm -rf "$DECKY_BUNDLE_DIR"
+          pio run -d DeckSrc/firmware
 
       - uses: actions/upload-artifact@v6
         with:
@@ -103,20 +154,24 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: node -e "const f='package.json';const p=require('./'+f);p.version=process.env.VERSION;p.repository='github:'+process.env.GITHUB_REPOSITORY;require('fs').writeFileSync(f,JSON.stringify(p,null,4)+'\n')"
 
+      # The package check fails the release if a built file - the 3D model, the
+      # firmware - did not make it into the installed app.
       - name: Build the installer
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
           pnpm exec electron-builder --win nsis --publish never
+          node scripts/package-check.mjs
 
       # latest.yml is what an installed Decky's updater reads: the version and the
-      # installer's SHA-512. The blockmap is left out to keep the release short;
-      # updates then download the whole installer.
+      # installer's SHA-512. The blockmap lets it download only the blocks that
+      # changed since the installed version.
       - uses: actions/upload-artifact@v6
         with:
           name: installer
           path: |
             DeckSrc/desktop/dist/*.exe
+            DeckSrc/desktop/dist/*.exe.blockmap
             DeckSrc/desktop/dist/latest.yml
           if-no-files-found: error
 
@@ -129,8 +184,9 @@ jobs:
           path: assets
           merge-multiple: true
 
-      # Three files on the release page: the installer, latest.yml for the updater,
-      # and the firmware - its manifest and images - as one zip the app unpacks.
+      # Four files on the release page: the installer, its blockmap and latest.yml
+      # for the updater, and the firmware - its manifest and images - as one zip
+      # the app unpacks.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,7 +196,8 @@ jobs:
         run: |
           (cd assets && zip -j -q "../decky-firmware-$FIRMWARE.zip" manifest.json *.bin)
           printf '%s\n' "$NOTES" > notes.md
-          gh release create "v$VERSION" assets/Decky-Setup-*.exe assets/latest.yml \
+          gh release create "v$VERSION" assets/Decky-Setup-*.exe assets/Decky-Setup-*.exe.blockmap \
+            assets/latest.yml \
             "decky-firmware-$FIRMWARE.zip" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
