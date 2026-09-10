@@ -30,7 +30,8 @@ try {
                         ".css": "text/css",
                         ".js": "text/javascript",
                         ".png": "image/png",
-                        ".obj": "text/plain",
+                        ".webp": "image/webp",
+                        ".glb": "model/gltf-binary",
                     }[extname(file)] ?? "application/octet-stream",
             });
         } catch {

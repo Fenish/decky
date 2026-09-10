@@ -3,7 +3,7 @@ import fallback from "../../assets/decky-studio-fallback.png";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 /** Fixed camera and studio lighting for the approved disconnected composition.
  * Rendering is demand-driven: no idle animation loop and no mechanical transforms.
@@ -186,9 +186,10 @@ export function DisconnectedModel({ connected, reducedMotion, onEntered, onPhase
                 if (latest.current.connected) latest.current.onEntered();
             }
         }, 6000);
-        new OBJLoader().load(
-            new URL("./models/decky.obj", document.baseURI).href,
-            (object) => {
+        // Made from the CAD export by scripts/convert-model.mjs.
+        new GLTFLoader().load(
+            new URL("./models/decky.glb", document.baseURI).href,
+            ({ scene: object }) => {
                 if (disposed) {
                     disposeObject(object);
                     return;
@@ -198,12 +199,14 @@ export function DisconnectedModel({ connected, reducedMotion, onEntered, onPhase
                 const size = box.getSize(new THREE.Vector3());
                 object.position.sub(center);
                 assembly.scale.setScalar(4.5 / Math.max(size.x, size.y, size.z));
+                // The loader rewrites names ("Touch_Glass"); userData.name keeps the CAD body's.
+                const cad = (child: THREE.Object3D): string => child.userData.name ?? "";
                 object.traverse((child) => {
                     if (!(child instanceof THREE.Mesh)) return;
                     const old = Array.isArray(child.material) ? child.material : [child.material];
                     old.forEach((material) => material.dispose());
-                    const glass = /touch glass/i.test(child.name);
-                    const cover = /top cover/i.test(child.name);
+                    const glass = /touch glass/i.test(cad(child));
+                    const cover = /top cover/i.test(cad(child));
                     child.material = glass
                         ? new THREE.MeshBasicMaterial({ color: 0x000000 })
                         : new THREE.MeshStandardMaterial({
@@ -215,7 +218,7 @@ export function DisconnectedModel({ connected, reducedMotion, onEntered, onPhase
                 });
                 assembly.add(object);
                 // The camera target is on the original glass, safely inside its center aperture.
-                const glassMesh = object.children.find((child) => /touch glass/i.test(child.name));
+                const glassMesh = object.children.find((child) => /touch glass/i.test(cad(child)));
                 if (glassMesh instanceof THREE.Mesh) {
                     glassMesh.geometry.computeBoundingBox();
                     destination.z =
