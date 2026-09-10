@@ -149,4 +149,4 @@ SD card, and display setup.
   <a href="#build-your-decky">Build Decky</a> · <a href="DeckSrc/desktop/README.md">Read the desktop guide</a>
 </p>
 
-<p align="center"><sub>Hardware scenes and floating-key artwork are AI-generated product illustrations based on the project. App captures show an illustrative configuration in the real interface. <a href="docs/media/README.md">Visual sources and generation prompts</a>.</sub></p>
+<p align="center"><sub>Hardware scenes and floating-key artwork are AI-generated product illustrations based on the project. App captures show an illustrative configuration in the real interface.</sub></p>
