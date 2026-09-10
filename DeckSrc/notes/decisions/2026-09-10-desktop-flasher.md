@@ -40,4 +40,14 @@ That test found two things that would otherwise have shipped:
 - _Detecting a CrowPanel from the USB IDs._ The CH340 is in thousands of
   devices; only the bootloader's chip and flash answer settles it.
 
+**Revised 2026-09-11:** the first install is one question instead of four steps.
+The silent device is offered at once ("Install Decky on it?"), and that one
+click restarts it into the bootloader, then installs only on an ESP32-S3 with 4
+MB of flash. It still waits for the click, because checking without one would
+also restart unrelated hardware on the same USB chip, like a 3D printer
+mid-print. The two silent asks now come a second apart within one status check,
+and a newly plugged-in port triggers a check within a second. The offer appeared
+12-16 s after plugging in before; the estimate is now about 6 s, with Wi-Fi
+tried first for a paired deck.
+
 See [[firmware-install]], [[flashing-the-panel]].

@@ -22,6 +22,13 @@ too close to the beam, which is the tear it is meant to prevent.
 
 Cost is about 5% of the frame rate. Frames are deferred, not dropped.
 
+A full page redraw writes the fifteen keys greedily: each one goes out as soon as
+its row is clear, rather than in index order. Some row is always clear, so a page
+costs about 35 ms. That is mostly the copies themselves - about 2.1 ms a key,
+PSRAM to PSRAM beside the scanout, with one memcpy per row. The write estimate is
+still twice the write and jumps up at once, but it eases back down, so one slow
+write no longer narrows every later window.
+
 **Why it matters:** the instinct is to reach for double buffering, which on this
 board is the expensive wrong answer.
 

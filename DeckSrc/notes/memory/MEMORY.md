@@ -61,8 +61,9 @@ project context.
   yet seen on a real install
 - [titlebar-drag-regions](titlebar-drag-regions.md) — nothing over the title
   bar's buttons may belong to the title bar; it steals their clicks
-- [rgb-scanout-slip](rgb-scanout-slip.md) — a wrapped, shifted picture with a
-  correct framebuffer; restart is a no-op here, full init fixes it
+- [rgb-scanout-slip](rgb-scanout-slip.md) — a wrapped, shifted picture is the
+  driver's bounce parity flipped by flash stalls; guarded every VSYNC, re-init
+  never fixed it
 - [packaging-drops-files](packaging-drops-files.md) — electron-builder silently
   drops *.obj and other extensions; package-check.mjs guards the installer
 - [electron-run-as-node](electron-run-as-node.md) — shells here set
