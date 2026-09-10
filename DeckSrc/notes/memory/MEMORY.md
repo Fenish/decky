@@ -33,3 +33,4 @@ assuming project context.
 - [release-pipeline](release-pipeline.md) — every product-code push to main releases itself; firmware has its own version
 - [app-self-update](app-self-update.md) — installed Decky updates itself via electron-updater; the silent install is not yet seen on a real install
 - [titlebar-drag-regions](titlebar-drag-regions.md) — nothing over the title bar's buttons may belong to the title bar; it steals their clicks
+- [rgb-scanout-slip](rgb-scanout-slip.md) — a wrapped, shifted picture with a correct framebuffer; restart is a no-op here, full init fixes it
