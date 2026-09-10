@@ -6,6 +6,11 @@
  * SHA-512, and runs it silently; the installer restarts Decky on the new
  * version. The window shows each stage, so nobody clicks through a setup.
  *
+ * The download is differential: each release also carries the installer's
+ * blockmap, and every installer leaves a copy of itself in the updater's cache,
+ * so only the blocks that differ from the installed version are fetched. When
+ * anything for that is missing, electron-updater downloads the whole installer.
+ *
  * Only an installed Decky can do this: a development build has no installer to
  * replace, and offers the download in the browser instead.
  *--------------------------------------------------------------*/
@@ -42,8 +47,9 @@ export async function installAppUpdate(
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.logger = null;
-    // Releases carry no blockmap, to keep their file list short: always the whole installer.
-    autoUpdater.disableDifferentialDownload = true;
+    autoUpdater.disableDifferentialDownload = false;
+    // Releases carry a regular installer, not the web installer's package.
+    autoUpdater.disableWebInstaller = true;
     const token = new CancellationToken();
     download = token;
     cancelled = false;

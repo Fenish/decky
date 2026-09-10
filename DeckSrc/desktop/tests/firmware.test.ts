@@ -94,9 +94,9 @@ describe("firmware packages", () => {
 });
 
 describe("firmware from GitHub releases", () => {
-    // One release per version: the installer, latest.yml for Decky's updater, and
-    // the firmware as one zip. The firmware keeps its own version, which only the
-    // manifest inside the zip states.
+    // One release per version: the installer, its blockmap and latest.yml for
+    // Decky's updater, and the firmware as one zip. The firmware keeps its own
+    // version, which only the manifest inside the zip states.
     const firmwareIn: Record<string, string> = {
         "v0.5.0": "1.6.0",
         "v0.4.1-beta": "1.5.0",
@@ -115,6 +115,12 @@ describe("firmware from GitHub releases", () => {
         html_url: `https://github.com/someone/decky/releases/tag/${release.tag_name}`,
         assets: firmware
             ? [
+                  // Ahead of the installer, whose name it starts with: it must not be taken for it.
+                  {
+                      name: `Decky-Setup-${release.tag_name.slice(1)}.exe.blockmap`,
+                      size: 120_000,
+                      browser_download_url: `https://example.test/${release.tag_name}/blockmap`,
+                  },
                   {
                       name: `Decky-Setup-${release.tag_name.slice(1)}.exe`,
                       size: 90_000_000,
