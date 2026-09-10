@@ -3,9 +3,10 @@
 PlatformIO runs this as a pre-script. The version comes from, in order:
 
 1. the DECKY_FW_VERSION environment variable, which the release workflow sets
-   from the `firmware-v*` tag it is building;
-2. `git describe` against the newest `firmware-v*` tag, so a local build after
-   a release reads like "1.4.0-3-gabc1234-dirty";
+   to the firmware version it is releasing;
+2. `git describe` against the newest `firmware-v*` tag - the release workflow
+   adds one whenever the firmware version rises - so a local build after a
+   release reads like "1.4.0-3-gabc1234-dirty";
 3. "dev", when there is no tag or no git at all.
 
 The desktop app only treats plain release numbers as updates, so local builds

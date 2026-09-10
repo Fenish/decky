@@ -1,0 +1,147 @@
+# Release Decky automatically.
+#
+# Every push to main runs .github/scripts/plan_release.py. When product code
+# changed since the last release - firmware or desktop sources, not tools,
+# scripts, tests or notes - this builds the deck firmware and the Windows
+# installer and publishes both in one release, v<version>. Version numbers count
+# up by themselves; the script documents the rules and the [minor], [major] and
+# [skip release] markers a commit message can carry.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time. A push that arrives meanwhile waits, then releases
+# everything that is new since the release before it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      firmware_version: ${{ steps.plan.outputs.firmware_version }}
+      firmware_bumped: ${{ steps.plan.outputs.firmware_bumped }}
+      notes: ${{ steps.plan.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Tags and history decide whether to release and what the versions are.
+          fetch-depth: 0
+
+      - id: plan
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: python3 .github/scripts/plan_release.py
+
+  firmware:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        env:
+          DECKY_FW_VERSION: ${{ needs.plan.outputs.firmware_version }}
+          # scripts/bundle_for_desktop.py writes manifest.json and the images here.
+          DECKY_BUNDLE_DIR: ${{ runner.temp }}/firmware
+        run: pio run -d DeckSrc/firmware
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: firmware
+          path: ${{ runner.temp }}/firmware/
+          if-no-files-found: error
+
+  desktop:
+    needs: [plan, firmware]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: DeckSrc/desktop
+    steps:
+      - uses: actions/checkout@v5
+
+      # The installer carries the firmware it was released with.
+      - uses: actions/download-artifact@v5
+        with:
+          name: firmware
+          path: DeckSrc/desktop/resources/firmware
+
+      - uses: pnpm/action-setup@v5
+        with:
+          package_json_file: DeckSrc/desktop/package.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: DeckSrc/desktop/pnpm-lock.yaml
+
+      # The app reports this version, and checks this repository for firmware -
+      # so a fork's installer checks the fork's releases.
+      - name: Stamp the version and repository
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node -e "const f='package.json';const p=require('./'+f);p.version=process.env.VERSION;p.repository='github:'+process.env.GITHUB_REPOSITORY;require('fs').writeFileSync(f,JSON.stringify(p,null,4)+'\n')"
+
+      - name: Build the installer
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm exec electron-builder --win nsis --publish never
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: installer
+          path: DeckSrc/desktop/dist/*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, firmware, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          NOTES: ${{ needs.plan.outputs.notes }}
+        run: |
+          printf '%s\n' "$NOTES" > notes.md
+          gh release create "v$VERSION" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Decky $VERSION" \
+            --notes-file notes.md
+
+      # Marks the commit the new firmware version was built from; the next
+      # release compares against it, and local builds read it through git describe.
+      - name: Mark the firmware version
+        if: needs.plan.outputs.firmware_bumped == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRMWARE: ${{ needs.plan.outputs.firmware_version }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/firmware-v$FIRMWARE" -f sha="$GITHUB_SHA"

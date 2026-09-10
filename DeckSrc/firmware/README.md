@@ -58,9 +58,11 @@ settings and pairing. Key artwork is stored on the microSD card
 - `scripts/firmware_version.py` stamps `DECKY_FW_VERSION`: the
   `DECKY_FW_VERSION` environment variable, else `git describe` against the
   newest `firmware-v*` tag, else `dev`. It appears as `fw=` in the `ID` reply.
-- Pushing a tag `firmware-v<x.y.z>` runs
-  `.github/workflows/firmware-release.yml`, which publishes the release the
-  desktop app checks for updates.
+- Releases are automatic: a push to `main` that changes firmware code gives the
+  firmware a new version and publishes it next to the Windows installer
+  (`.github/workflows/release.yml`). The firmware version only rises when
+  firmware code changed; each rise is marked by a `firmware-v<x.y.z>` tag, so
+  run `git fetch --tags` for local builds to report it.
 
 ## Wi-Fi security
 

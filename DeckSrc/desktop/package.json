@@ -78,6 +78,7 @@
             "icon": "resources/icon.ico"
         },
         "nsis": {
+            "artifactName": "Decky-Setup-${version}.${ext}",
             "oneClick": false,
             "allowToChangeInstallationDirectory": true,
             "shortcutName": "Decky"

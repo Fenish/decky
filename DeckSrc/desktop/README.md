@@ -233,16 +233,25 @@ Decky installs the deck's firmware itself, over USB.
 copies the images and `manifest.json` into `resources/firmware/`, which is gitignored and packed
 into the installer. The manifest lists each image's address, size, SHA-256 and MD5, the firmware
 version and the protocol number; packages that would touch NVS or the data partition are rejected
-before anything is written. GitHub releases tagged `firmware-v<x.y.z>` carry the same files;
-`.github/workflows/firmware-release.yml` builds and publishes them, and `desktop-release.yml` builds
-the installer for `desktop-v*` tags with the firmware inside. The app checks the repository named in
-package.json's `repository` field (`github:Fenish/decky`); the release workflow overwrites it with
-the repository it runs in, so a fork's installer checks the fork. Without the field, checking GitHub
-is unavailable.
+before anything is written. Every GitHub release carries the same files next to the Windows
+installer, and the app reads the firmware version from the newest release's manifest. The app checks
+the repository named in package.json's `repository` field (`github:Fenish/decky`); the release
+workflow overwrites it with the repository it runs in, so a fork's installer checks the fork. Without
+the field, checking GitHub is unavailable.
 
-**Versions.** The firmware version comes from the `firmware-v*` tag, or `git describe` for local
-builds, or `dev`. The protocol number lives only in `../firmware/include/decky_version.h`. An update
-is offered for a newer protocol, or for a newer release number at the same protocol; development
+**Releases.** `../../.github/workflows/release.yml` runs on every push to `main`. When firmware or
+desktop sources changed since the last release (tools, scripts, tests and notes do not count), it
+builds the firmware and the installer and publishes both as one release, `v<version>`. Versions count
+up by themselves: the patch number by default, `[minor]` or `[major]` in a commit's first line for a
+bigger step, and `[skip release]` holds a push back until the next release. Raising `version` in
+package.json sets the next number. The rules live in `../../.github/scripts/plan_release.py`; run it
+from the repository root for a dry run. Release notes come from the commit messages.
+
+**Versions.** The app is stamped with the release version. The firmware keeps its own version,
+which only rises when firmware code changed; each rise is marked by a `firmware-v<x.y.z>` tag, which
+local builds read through `git describe` (else `dev`). The protocol number lives only in
+`../firmware/include/decky_version.h`. An update is offered for a newer protocol, or a newer firmware
+version at the same protocol, so a desktop-only release never asks anyone to reflash; development
 builds are never offered an older release.
 
 For flashing without the app, `../firmware/tools/flash.ps1` builds and writes the application (add
