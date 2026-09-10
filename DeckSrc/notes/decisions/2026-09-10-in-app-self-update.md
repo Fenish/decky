@@ -12,8 +12,10 @@ wizard, with progress on a screen of its own.
 
 **Choice:** electron-updater's GitHub provider with the NSIS target. The build
 config names `publish: github`, so electron-builder writes `app-update.yml` into
-the app (owner and repo from package.json's `repository`) and `latest.yml` plus
-a blockmap next to the installer; the release workflow uploads both. The update
+the app (owner and repo from package.json's `repository`) and `latest.yml` next to
+the installer; the release workflow uploads it. No blockmap: the user wanted
+the release page to list only the installer, `latest.yml` and the firmware zip,
+so updates download the whole installer. The update
 is started by the user, never downloaded behind their back:
 `src/main/app-update.ts` checks, downloads with progress (cancellable), lets
 electron-updater verify the SHA-512, then runs the installer silently with "run

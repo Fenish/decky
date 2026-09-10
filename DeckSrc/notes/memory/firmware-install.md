@@ -11,8 +11,8 @@ on, and never the merged `firmware.factory.bin`, which runs through NVS. Key
 artwork is on the microSD card and untouched by any install.
 
 Packages come from `desktop/resources/firmware/` (written by the PlatformIO
-post-build script `scripts/bundle_for_desktop.py`) or the newest GitHub release,
-both as `manifest.json` plus images with SHA-256 and MD5. The firmware version
+post-build script `scripts/bundle_for_desktop.py`) or the newest GitHub release
+(zipped as `decky-firmware-<version>.zip`), both as `manifest.json` plus images with SHA-256 and MD5. The firmware version
 is read from the manifest, never from the release tag. See [[release-pipeline]].
 The protocol number lives only in `firmware/include/decky_version.h`.
 

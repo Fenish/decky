@@ -11,8 +11,9 @@ Settings → Updates; the update screen is
 `features/updates/app-update-screen.tsx`, driven by `app-update:progress` events
 from `src/main/app-update.ts`.
 
-- A release must carry `Decky-Setup-<v>.exe`, `.exe.blockmap` and `latest.yml`;
-  the release workflow uploads all three. The installer name is fixed by
+- A release must carry `Decky-Setup-<v>.exe` and `latest.yml`. There is no
+  blockmap (the user wanted a short file list), so updates download the whole
+  installer; `disableDifferentialDownload` stops the updater looking for one. The installer name is fixed by
   `build.nsis.artifactName`.
 - `app-update.yml` inside the app comes from `build.publish` plus package.json's
   `repository`, so a fork updates from the fork.

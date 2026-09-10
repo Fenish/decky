@@ -5,9 +5,9 @@ type: project
 
 Releases are automatic. Every push to `main` runs
 `.github/workflows/release.yml`; `.github/scripts/plan_release.py` releases when
-firmware or desktop source paths changed since the last `v*` tag, as one release
-`v<x.y.z>` holding the Windows installer (`Decky-Setup-<version>.exe`) and the
-firmware files. Nobody tags by hand.
+firmware or desktop source paths changed since the last `v*` tag, as one release `v<x.y.z>` holding three files: the Windows installer
+(`Decky-Setup-<version>.exe`), `latest.yml` for the updater, and the firmware
+as `decky-firmware-<firmware version>.zip`. Nobody tags by hand.
 
 - Release number: patch bump by default; `[minor]` / `[major]` in a commit's
   first line bump more; `[skip release]` there holds the push. Markers in a
