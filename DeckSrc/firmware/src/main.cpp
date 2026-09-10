@@ -46,6 +46,10 @@ bool warming = false;
 bool showing_status = false;
 bool pending_activate = true;
 uint32_t last_host_ms = 0;
+// While Decky on the PC updates itself (UPDATING), the deck says so instead of
+// Disconnected, until the new version says HELLO or this passes.
+uint32_t updating_until = 0;
+constexpr uint32_t UPDATING_HOLD_MS = 180000;
 int warm_total = 15;
 int warm_done = 0;
 constexpr uint32_t HOST_TIMEOUT_MS = 12000;
@@ -100,7 +104,10 @@ void draw_key(int cell, bool pressed) {
 void draw_page() {
     for (int cell = 0; cell < keygrid::COUNT; ++cell) draw_key(cell, false);
 }
-void show_status(int percent, bool offline = false) {
+// The center key's status: the logo, then a label, a progress bar, or both.
+// A label alone is a state ("Disconnected"); a bar alone is loading progress;
+// percent < 0 means no bar.
+void show_status(int percent, const char *label = nullptr) {
     if(!showing_status) {
         for(int i=0;i<keygrid::COUNT;++i){const auto r=keygrid::cell(i);wait_for_cell(r);panel::display.fillRect(r.x,r.y,r.w,r.h,0);}
         showing_status=true;
@@ -110,8 +117,12 @@ void show_status(int percent, bool offline = false) {
     const int left=rect.x+(rect.w-DECKY_LOGO_SIZE)/2, top=rect.y+8;
     uint16_t *frame=panel::framebuffer();
     for(int y=0;y<DECKY_LOGO_SIZE;++y)for(int x=0;x<DECKY_LOGO_SIZE;++x){const uint8_t a=pgm_read_byte(DECKY_LOGO_ALPHA+y*DECKY_LOGO_SIZE+x);frame[(top+y)*panel::WIDTH+left+x]=panel::display.color565(a,a,a);}
-    if(offline){panel::display.setFont(&fonts::Font0);panel::display.setTextSize(1);panel::display.setTextColor(0xBDF7);panel::display.setTextDatum(textdatum_t::middle_center);panel::display.drawString("Disconnected",rect.x+rect.w/2,rect.y+rect.h-15);}
-    else {const int width=rect.w-28;panel::display.fillRoundRect(rect.x+14,rect.y+rect.h-18,width,5,2,0x2945);const int fill=width*constrain(percent,0,100)/100;if(fill>0)panel::display.fillRoundRect(rect.x+14,rect.y+rect.h-18,fill,5,2,0xFFFF);}
+    const bool bar=percent>=0;
+    if(label){panel::display.setFont(&fonts::Font0);panel::display.setTextSize(1);panel::display.setTextColor(0xBDF7);panel::display.setTextDatum(textdatum_t::middle_center);panel::display.drawString(label,rect.x+rect.w/2,rect.y+rect.h-(bar?29:15));}
+    // LovyanGFX stores these colours byte-swapped against the framebuffer's order
+    // (the order the desktop's key images use), so the dark grey 0x2945 track is
+    // passed as 0x4529; passed plainly it showed green.
+    if(bar){const int width=rect.w-28;panel::display.fillRoundRect(rect.x+14,rect.y+rect.h-18,width,5,2,0x4529);const int fill=width*constrain(percent,0,100)/100;if(fill>0)panel::display.fillRoundRect(rect.x+14,rect.y+rect.h-18,fill,5,2,0xFFFF);}
 }
 void warm_progress() {
     if(!warming)return;
@@ -120,7 +131,7 @@ void warm_progress() {
 }
 void disconnected() {
     host_online=false;warming=false;transitioning=false;pending=nullptr;pressed_cell=-1;
-    show_status(0,true);
+    show_status(-1,"Disconnected");
 }
 void identify() {
     uint8_t mac[6] = {0}; esp_read_mac(mac, ESP_MAC_WIFI_STA);
@@ -270,7 +281,15 @@ void command(const char *line) {
     else if(strcmp(line,"DISPLAY_RESYNC")==0)wireless::reply().println(panel::recover_scanout()?"OK display realigned":"ERR display recovery failed");
     else if(strcmp(line,"PING")==0) wireless::reply().printf("OK ping online=%d\n",host_online?1:0);
     else if(strcmp(line,"BYE")==0){disconnected();wireless::reply().println("OK disconnected");}
-    else if(strncmp(line,"HELLO ",6)==0){const int count=sscanf(line,"HELLO %d %d %c",&page,&units,&extra);if((count!=1&&count!=2)||page<1||page>CACHE_SLOTS||(count==2&&(units<page*keygrid::COUNT||units>page*keygrid::COUNT*2))){wireless::reply().println("ERR cache capacity exceeded");return;}host_online=true;warming=true;transitioning=true;warm_total=count==2?units:page*keygrid::COUNT;warm_done=0;pending=nullptr;show_status(15);wireless::reply().println("OK warming");}
+    else if(strncmp(line,"UPDATING ",9)==0){
+        // Decky on the PC is updating itself: the percent follows its download, and
+        // the screen stays while Decky closes for the installer. END means it
+        // stopped - cancelled or failed - and the deck goes back to its page.
+        if(strcmp(line+9,"END")==0){updating_until=0;if(active&&active->complete){showing_status=false;draw_page();}else disconnected();wireless::reply().println("OK updating end");}
+        else if(sscanf(line+9,"%d %c",&page,&extra)==1&&page>=0&&page<=100){host_online=true;transitioning=false;updating_until=millis()+UPDATING_HOLD_MS;if(!updating_until)updating_until=1;show_status(page,"Updating Decky");wireless::reply().println("OK updating");}
+        else wireless::reply().println("ERR invalid update progress");
+    }
+    else if(strncmp(line,"HELLO ",6)==0){const int count=sscanf(line,"HELLO %d %d %c",&page,&units,&extra);if((count!=1&&count!=2)||page<1||page>CACHE_SLOTS||(count==2&&(units<page*keygrid::COUNT||units>page*keygrid::COUNT*2))){wireless::reply().println("ERR cache capacity exceeded");return;}host_online=true;updating_until=0;warming=true;transitioning=true;warm_total=count==2?units:page*keygrid::COUNT;warm_done=0;pending=nullptr;show_status(15);wireless::reply().println("OK warming");}
     else if(sscanf(line,"ALT %d %u %d %u %u %c",&page,&signature,&cell,&bytes,&checksum,&extra)==5)alternate_image(page,signature,cell,bytes,checksum);
     else if(sscanf(line,"STATE %d %u %u %c",&page,&signature,&mask,&extra)==3)select_state(page,signature,mask);
     else if(sscanf(line,"CACHE %d %u %c",&page,&signature,&extra)==2)begin_page(page,signature,true);
@@ -330,4 +349,4 @@ void realign_after_warmup() {
     if (was_warming && !warming) panel::recover_scanout();
     was_warming = warming;
 }
-void loop() { if (!initialized) { vTaskDelay(100); return; } poll_serial(); resync_beam(); realign_after_warmup(); if(host_online&&millis()-last_host_ms>HOST_TIMEOUT_MS)disconnected(); poll_touch(); vTaskDelay(1); }
+void loop() { if (!initialized) { vTaskDelay(100); return; } poll_serial(); resync_beam(); realign_after_warmup(); const bool updating=updating_until&&static_cast<int32_t>(updating_until-millis())>0;if(host_online&&!updating&&millis()-last_host_ms>HOST_TIMEOUT_MS)disconnected(); poll_touch(); vTaskDelay(1); }

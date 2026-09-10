@@ -56,6 +56,8 @@ let tray: Tray | null = null;
 // Every size from 16 to 256 px, so the tray and taskbar stay sharp at any display scale.
 const appIcon = join(__dirname, "../../resources/icon.ico");
 let quitting = false;
+// Set when Decky quits for its installer: the deck is left showing the update.
+let restartingForUpdate = false;
 let config = createConfig();
 let configPath = "";
 let wifiPath = "";
@@ -579,18 +581,40 @@ function registerHandlers(): void {
         await checkForUpdates();
         return firmwareInfo();
     });
-    handle("app-update:install", () =>
-        installAppUpdate(
+    // The deck shows the update too (UPDATING): the download's percent, and
+    // while Decky closes for the installer it keeps saying so instead of
+    // Disconnected, until the new version connects. Firmware without the command
+    // answers ERR, which changes nothing.
+    let deckPercent = -1;
+    const tellDeck = (line: string): void => {
+        if (!status.connected) return;
+        void serial(() => link.command(line, 1500)).catch(() => {});
+    };
+    handle("app-update:install", () => {
+        deckPercent = -1;
+        return installAppUpdate(
             (progress: AppUpdateProgress) => {
                 if (window && !window.isDestroyed())
                     window.webContents.send("app-update:progress", progress);
+                if (progress.stage === "checking") {
+                    deckPercent = -1;
+                    tellDeck("UPDATING 0");
+                } else if (progress.stage === "downloading") {
+                    const percent = Math.floor(progress.percent);
+                    if (percent !== deckPercent) {
+                        deckPercent = percent;
+                        tellDeck(`UPDATING ${percent}`);
+                    }
+                } else if (progress.stage === "installing") tellDeck("UPDATING 100");
+                else tellDeck("UPDATING END");
             },
             // Quitting for the installer is a real quit, not a hide to the tray.
             () => {
                 quitting = true;
+                restartingForUpdate = true;
             },
-        ),
-    );
+        );
+    });
     handle("app-update:cancel", () => cancelAppUpdate());
     handle("app-update:download", async (): Promise<Reply> => {
         // Only a URL this process read from GitHub itself is ever opened.
@@ -974,7 +998,15 @@ else {
         tray?.destroy();
         runner.cancel();
         const goodbye = async (): Promise<void> => {
-            if (!serialActive && link.openPath && status.connected && status.identity.protocol >= 3)
+            // No BYE when quitting for the installer: that would turn the deck's
+            // "Updating Decky" into Disconnected while the new version installs.
+            if (
+                !restartingForUpdate &&
+                !serialActive &&
+                link.openPath &&
+                status.connected &&
+                status.identity.protocol >= 3
+            )
                 await link.command("BYE", 350).catch(() => {});
             await link.close();
         };
