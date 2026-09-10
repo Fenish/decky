@@ -109,7 +109,9 @@ export type DeckEvent =
     | { kind: "page"; page: number; at: number }
     | { kind: "reset"; at: number }
     /** USB was lost and the connection continued over Wi-Fi. */
-    | { kind: "fallback"; at: number };
+    | { kind: "fallback"; at: number }
+    /** A USB-serial device was plugged in: worth a status check now. */
+    | { kind: "ports"; at: number };
 export interface Reply {
     ok: boolean;
     message: string;

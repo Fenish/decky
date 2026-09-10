@@ -90,8 +90,8 @@ try {
     if (interval < 3400 || interval > 4800)
         throw new Error(`Unexpected retry interval: ${interval}`);
 
-    // A silent USB device is offered for setup, checked only on request, and
-    // given the install button only once the check finds a CrowPanel.
+    // A silent USB device is offered for setup straight away, but nothing touches
+    // it until the user asks; the check then installs only on a CrowPanel.
     await page.evaluate(() => {
         window.__unknown = [{ path: "COM9", label: "COM9 - USB-SERIAL CH340" }];
         const plain = window.deck.status;
@@ -110,9 +110,12 @@ try {
             repository: null,
             update: null,
         });
+        window.__crowPanel = false;
         window.deck.firmwareProbe = async (path) => {
             window.__probed = path;
-            return { crowPanel: true, chip: "ESP32-S3", mac: "a4:cb:8f:cd:d2:74" };
+            return window.__crowPanel
+                ? { crowPanel: true, chip: "ESP32-S3", mac: "a4:cb:8f:cd:d2:74" }
+                : { crowPanel: false, chip: "ESP32-C3", mac: "34:85:18:00:00:01" };
         };
         window.deck.firmwareInstall = async (request) => {
             window.__installed = request;
@@ -120,19 +123,28 @@ try {
         };
         window.dispatchEvent(new Event("focus"));
     });
-    await expect(page.getByText("A device on COM9 isn't running Decky.")).toBeVisible({
-        timeout: 6000,
-    });
-    await page.getByRole("button", { name: "Check device", exact: true }).click();
+    await expect(page.getByText("Install Decky on this device?")).toBeVisible({ timeout: 6000 });
+    await expect(page.getByText("The device on COM9 isn't running Decky yet.")).toBeVisible();
+    // The device has been found, so the page stops saying it is looking.
+    await expect(page.getByText("Looking for Decky…")).toHaveCount(0);
     if (await page.evaluate(() => window.__probed))
-        throw new Error("The device was probed before the user agreed to restart it");
-    await page.getByRole("button", { name: "Check it", exact: true }).click();
-    await expect(page.getByText("CrowPanel found", { exact: false })).toBeVisible();
+        throw new Error("The device was probed before the user asked");
     // Buttons fade their background in 0.18 s; photograph the settled state.
     await page.mouse.move(5, 500);
     await page.waitForTimeout(300);
     await page.screenshot({ path: "output/decky-first-install.png" });
-    await page.getByRole("button", { name: "Install Decky firmware", exact: true }).click();
+    // Something else behind the same USB chip: checked, and left alone.
+    await page.getByRole("button", { name: "Install Decky", exact: true }).click();
+    await expect(page.getByText("This isn't a CrowPanel")).toBeVisible();
+    await expect(page.getByText("Found ESP32-C3. Nothing was changed.")).toBeVisible();
+    if (await page.evaluate(() => window.__installed))
+        throw new Error("Firmware was installed on a device that is not a CrowPanel");
+    await page.getByRole("button", { name: "OK", exact: true }).click();
+    // A CrowPanel: the same one button checks it and installs.
+    await page.evaluate(() => {
+        window.__crowPanel = true;
+    });
+    await page.getByRole("button", { name: "Install Decky", exact: true }).click();
     await expect(page.getByText("Firmware 1.4.0 installed. Decky is restarting.")).toBeVisible();
     const installed = await page.evaluate(() => window.__installed);
     if (installed?.source !== "bundled" || installed?.path !== "COM9")

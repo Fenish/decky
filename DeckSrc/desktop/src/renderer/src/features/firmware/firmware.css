@@ -48,41 +48,118 @@
     line-height: 1.5;
 }
 
-/* The Disconnected page's offer, under "Connect Decky". */
+/* The Disconnected page's offer to set up a device that isn't running Decky. */
 .first-install {
     position: absolute;
     left: 50%;
     bottom: 9%;
     transform: translateX(-50%);
-    width: min(420px, calc(100vw - 48px));
-    padding: 16px 18px;
-    border: 1px solid #dfd2b35c;
-    border-top-color: #efe6d18a;
-    border-radius: 16px;
-    background: linear-gradient(145deg, #24231d70, #090909e6 45%);
-    backdrop-filter: blur(14px);
-    box-shadow: 0 10px 30px #0006;
+    width: min(480px, calc(100vw - 48px));
+    padding: 16px 16px 14px;
+    border: 1px solid #dfd2b347;
+    border-top-color: #efe6d175;
+    border-radius: 18px;
+    background:
+        radial-gradient(120% 140% at 0% 0%, #e9d9b812, transparent 55%),
+        linear-gradient(150deg, #22211bb3, #0a0a0af0 55%);
+    backdrop-filter: blur(16px);
+    box-shadow:
+        0 18px 44px #000a,
+        inset 0 1px 0 #fff1d80f;
     color: #eee8da;
-    text-align: center;
     z-index: 2;
 }
-.first-install > p {
-    margin: 0 0 12px;
-    font-size: 13px;
-    line-height: 1.5;
-    color: #d6d0c3;
+.first-install-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.first-install-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid #e8d8b84d;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #e9d9b81f, #3a342826);
+    color: #eee2cd;
+}
+.first-install-icon svg {
+    width: 20px;
+    height: 20px;
+}
+.first-install-icon.checking svg {
+    animation: first-install-spin 0.9s linear infinite;
+}
+.first-install-icon.other {
+    border-color: #e6b39a4d;
+    background: #e6b39a14;
+    color: #e6b39a;
+}
+.first-install-text {
+    flex: 1;
+    min-width: 0;
+}
+.first-install-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #f3ecdd;
+}
+.first-install-detail {
+    margin: 3px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #b7ae9b;
+}
+.first-install-main .button {
+    flex: none;
+}
+.first-install-main .button svg {
+    width: 16px;
+    height: 16px;
+}
+.first-install-note {
+    margin: 14px 0 0;
+    padding-top: 11px;
+    border-top: 1px solid #ffffff12;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #9d9586;
+}
+.first-install .firmware-error {
+    margin: 10px 0 0;
 }
 .first-install .firmware-actions {
-    justify-content: center;
+    justify-content: flex-end;
 }
 .first-install .firmware-progress p:first-child {
     margin-top: 0;
+}
+@keyframes first-install-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+/* Narrow windows: the button takes its own row under the text. */
+@media (max-width: 520px) {
+    .first-install-main {
+        flex-wrap: wrap;
+    }
+    .first-install-main .button {
+        width: 100%;
+    }
 }
 @media (prefers-reduced-motion: reduce) {
     .firmware-bar.indeterminate > span {
         animation: none;
         width: 100%;
         opacity: 0.45;
+    }
+    .first-install-icon.checking svg {
+        animation: none;
     }
 }
 

@@ -128,7 +128,9 @@ export function useDecky() {
                     synced.current = "";
                     setDeviceEpoch((value) => value + 1);
                     void check();
-                }
+                } else if (event.kind === "ports")
+                    // A check already under way listed the ports before this one arrived.
+                    void (request.current ?? Promise.resolve()).then(() => check());
             }),
             window.deck.onActivity((event) => {
                 if (!event.ok) notify(event.message);

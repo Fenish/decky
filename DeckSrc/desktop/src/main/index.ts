@@ -65,10 +65,14 @@ let wifiPair: WifiPair | null = null;
 let wifiScanning = false;
 let storageWarningShown = false;
 let status: DeckStatus = { connected: false };
-// USB-serial ports that did not answer ID, and for how many checks in a row.
-// Two silent checks and the Disconnected page offers to look at the device.
+// USB-serial ports that did not answer ID, and how many times in a row. Two
+// silent asks a moment apart - a deck plugged in just now may still be starting
+// up - and the Disconnected page offers to set the device up.
 const silentPorts = new Map<string, number>();
 const SILENT_CHECKS = 2;
+const SILENT_RECHECK_MS = 1000;
+// How often the list of USB-serial ports is compared for new arrivals.
+const PORT_WATCH_MS = 1000;
 // Transport of the last good connection, kept across a heartbeat failure so a
 // USB link that came back over Wi-Fi can be announced.
 let lastTransport: Transport | null = null;
@@ -723,14 +727,22 @@ function registerHandlers(): void {
         for (const known of [...silentPorts.keys()])
             if (!ports.some((port) => port.path === known)) silentPorts.delete(known);
         for (const port of ports) {
-            const identity = await link.identify(port.path);
+            let identity = await link.identify(port.path);
+            let silences = identity ? 0 : (silentPorts.get(port.path) ?? 0) + 1;
+            // A new port's silence is asked about again within this check, not a
+            // whole status check later, so a board without Decky is offered sooner.
+            while (!identity && silences < SILENT_CHECKS) {
+                await new Promise((resolve) => setTimeout(resolve, SILENT_RECHECK_MS));
+                identity = await link.identify(port.path);
+                silences = identity ? 0 : silences + 1;
+            }
             if (identity) {
                 status = { connected: true, identity };
                 silentPorts.clear();
                 notThisDeck.clear();
                 return;
             }
-            silentPorts.set(port.path, (silentPorts.get(port.path) ?? 0) + 1);
+            silentPorts.set(port.path, silences);
         }
         await link.close();
         if (await connectWireless()) return;
@@ -956,6 +968,22 @@ else {
                 });
         }, 4000);
         heartbeat.unref();
+        // A USB-serial device that was just plugged in is worth a status check at
+        // once rather than at the window's next poll: a deck connects sooner, and
+        // a board without Decky is offered sooner. Listing ports opens none.
+        let knownPorts: Set<string> | null = null;
+        setInterval(() => {
+            void DeckLink.listPorts()
+                .then((ports) => {
+                    const paths = new Set(ports.map((port) => port.path));
+                    const added =
+                        knownPorts !== null && [...paths].some((p) => !knownPorts!.has(p));
+                    knownPorts = paths;
+                    if (added && !quitting && window && !window.isDestroyed())
+                        window.webContents.send("deck:event", { kind: "ports", at: Date.now() });
+                })
+                .catch(() => {});
+        }, PORT_WATCH_MS).unref();
         link.onEvent = (event) => {
             if (quitting) return;
             if (event.kind === "reset") {

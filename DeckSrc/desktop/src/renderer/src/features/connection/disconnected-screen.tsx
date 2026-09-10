@@ -50,11 +50,14 @@ export function DisconnectedScreen({
                     <p className="disconnected-help">
                         Plug it in with a USB data cable, or power it on to reconnect over Wi-Fi.
                     </p>
-                    {/* The live region below says the same for screen readers. */}
-                    <p className="disconnected-searching" aria-hidden="true">
-                        <span className="searching-dot" />
-                        Looking for Decky…
-                    </p>
+                    {/* The live region below says the same for screen readers. Not
+                        while a device without Decky is offered: it has been found. */}
+                    {!waiting && (
+                        <p className="disconnected-searching" aria-hidden="true">
+                            <span className="searching-dot" />
+                            Looking for Decky…
+                        </p>
+                    )}
                 </div>
             </div>
             {waiting && <FirstInstall key={waiting.path} device={waiting} />}
