@@ -259,9 +259,9 @@ and
 Model loading uses [Three.js OBJLoader](https://threejs.org/docs/pages/OBJLoader.html). The layout
 and visuals are Decky's own.
 
-The title-bar logo is `Branding/png/logo.svg`, rendered white, and the disconnected screen's model
+The title-bar logo is `Branding/logo.svg`, rendered white, and the disconnected screen's model
 is `3D Models/StreamDeck_CAD.obj`. The app uses copies of both; the originals are not modified. The
-app, taskbar, installer and tray icon come from `Branding/png/logo-app.png`:
+app, taskbar, installer and tray icon come from `Branding/logo-app.png`:
 `node scripts/build-icons.mjs` trims its transparent margin and writes `resources/icon.png` and the
 multi-size `resources/icon.ico` (16–256 px).
 

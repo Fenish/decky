@@ -5,7 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 // The app, taskbar, installer and tray icon, from the branding's app logo.
 // Transparent margins are trimmed so the mark fills the icon like other apps' icons.
-const SOURCE = "../../Branding/png/logo-app.png";
+const SOURCE = "../../Branding/logo-app.png";
 const PAD = 0.008;
 // Windows picks an entry per DPI: 16/20/24/32 for the tray, larger for the taskbar,
 // Explorer and the installer. 256 is the size electron-builder requires.
