@@ -97,7 +97,11 @@ export function AppUpdateScreen() {
                                 ? "Asking GitHub for the newest release…"
                                 : progress.stage === "downloading"
                                   ? progress.total
-                                      ? `${percent}% · ${megabytes(progress.transferred)} of ${megabytes(progress.total)} MB`
+                                      ? // The speed shows at a glance whether a slow update is the network.
+                                        `${percent}% · ${megabytes(progress.transferred)} of ${megabytes(progress.total)} MB` +
+                                        (progress.bytesPerSecond
+                                            ? ` · ${megabytes(progress.bytesPerSecond)} MB/s`
+                                            : "")
                                       : "Starting the download…"
                                   : "Decky closes and opens again by itself in a moment."}
                         </p>

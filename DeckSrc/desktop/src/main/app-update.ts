@@ -55,6 +55,7 @@ export async function installAppUpdate(
             percent: info.percent,
             transferred: info.transferred,
             total: info.total,
+            bytesPerSecond: info.bytesPerSecond,
         });
     try {
         report({ stage: "checking" });
@@ -64,7 +65,14 @@ export async function installAppUpdate(
             return;
         }
         version = result.updateInfo.version;
-        report({ stage: "downloading", version, percent: 0, transferred: 0, total: 0 });
+        report({
+            stage: "downloading",
+            version,
+            percent: 0,
+            transferred: 0,
+            total: 0,
+            bytesPerSecond: 0,
+        });
         autoUpdater.on("download-progress", onProgress);
         await autoUpdater.downloadUpdate(token);
     } catch (error) {

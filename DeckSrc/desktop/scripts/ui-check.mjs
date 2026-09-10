@@ -721,11 +721,12 @@ try {
             percent: 42.4,
             transferred: 44_000_000,
             total: 104_000_000,
+            bytesPerSecond: 12_900_000,
         }),
     );
     const updating = page.getByRole("dialog", { name: "Updating Decky", exact: true });
     await expect(updating).toContainText("Downloading Decky 0.3.0");
-    await expect(updating).toContainText("42% · 42.0 of 99.2 MB");
+    await expect(updating).toContainText("42% · 42.0 of 99.2 MB · 12.3 MB/s");
     await expect(updating.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
     await page.screenshot({ path: "output/decky-app-update.png" });
     await updating.getByRole("button", { name: "Cancel", exact: true }).click();

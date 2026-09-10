@@ -54,7 +54,14 @@ export interface AppUpdateOffer {
 /** Stages of Decky updating itself, shown on the update screen. */
 export type AppUpdateProgress =
     | { stage: "checking" }
-    | { stage: "downloading"; version: string; percent: number; transferred: number; total: number }
+    | {
+          stage: "downloading";
+          version: string;
+          percent: number;
+          transferred: number;
+          total: number;
+          bytesPerSecond: number;
+      }
     | { stage: "installing"; version: string }
     | { stage: "failed"; message: string }
     | { stage: "cancelled" };
