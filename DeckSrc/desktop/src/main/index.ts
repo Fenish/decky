@@ -224,7 +224,14 @@ let cacheInitialized = false;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 let heartbeatPending = false;
 let closing = false;
-const uploaded = new Map<string, { signature: number; frames: Buffer[] }>();
+// Pages the deck holds, as sent or confirmed this session. `toggles` names the ON
+// artwork that went with them, cell and CRC-32 of each.
+const uploaded = new Map<string, { signature: number; frames: Buffer[]; toggles: string }>();
+const toggleArtwork = (toggleFrames: PageUpload["toggleFrames"]): string =>
+    (toggleFrames ?? [])
+        .map((item) => `${item.cell}:${crc32(Buffer.from(item.frame))}`)
+        .sort()
+        .join(",");
 let saveQueue: Promise<unknown> = Promise.resolve();
 function serial<T>(job: () => Promise<T>): Promise<T> {
     const wrapped = async (): Promise<T> => {
@@ -319,6 +326,30 @@ async function transferPage(
         )
             throw new Error("Invalid toggle artwork.");
     }
+    const toggles = independentToggles ? toggleArtwork(toggleFrames) : "";
+    // A page the deck already holds with this exact artwork, ON appearances
+    // included, opens with one STATE. Over Wi-Fi every command is a round trip,
+    // and a CACHE plus an ALT check per toggle key made a page with toggles
+    // visibly slower to open than one without. If the deck has dropped the page
+    // since, STATE is refused and the full exchange below runs.
+    const known = uploaded.get(pageId);
+    if (
+        !cacheOnly &&
+        independentToggles &&
+        known?.signature === signature &&
+        known.toggles === toggles
+    ) {
+        const shown = await link.command(
+            `STATE ${index} ${signature} ${pageStateMask(config.pages[index]!, keyStates.snapshot())}`,
+            2000,
+        );
+        if (shown.ok) {
+            displayed = { pageId, ...known };
+            deviceReady = config.activePageId === pageId;
+            return { ok: true, message: "Keys synced." };
+        }
+        uploaded.delete(pageId);
+    }
     let reply = await link.command(
         `${cacheOnly || independentToggles ? "CACHE" : "PAGE"} ${index} ${signature}`,
         5000,
@@ -359,7 +390,7 @@ async function transferPage(
             reportStorageFailure(reply);
             if (!reply.ok) return reply;
         }
-    const record = { signature, frames: frames.map((frame) => Buffer.from(frame)) };
+    const record = { signature, frames: frames.map((frame) => Buffer.from(frame)), toggles };
     uploaded.set(pageId, record);
     if (!cacheOnly) {
         if (independentToggles) {
