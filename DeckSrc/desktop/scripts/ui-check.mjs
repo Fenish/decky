@@ -584,14 +584,15 @@ try {
     await expect(page.getByRole("region", { name: "Updates", exact: true })).toBeVisible();
     const versions = page.locator(".firmware-versions");
     await expect(versions).toContainText("App");
-    await expect(versions).toContainText("v0.2.0");
-    // Firmware from before version reporting shows its protocol, not a made-up name.
-    await expect(versions).toContainText("protocol 6");
+    await expect(versions).toContainText("0.2.0");
+    // Firmware from before version reporting is called that; no protocol numbers.
+    await expect(versions).toContainText("older firmware");
+    await expect(versions).not.toContainText("protocol");
     await expect(page.getByText("development build", { exact: false })).toHaveCount(0);
     await expect(
         page.getByRole("button", { name: "Check GitHub for updates", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Update firmware to v1.4.0", exact: true }).click();
+    await page.getByRole("button", { name: "Update firmware to 1.4.0", exact: true }).click();
     await expect(page.getByText("Firmware 1.4.0 installed. Decky is restarting.")).toBeVisible();
     if ((await page.evaluate(() => window.__firmwareInstall))?.source !== "bundled")
         throw new Error("Settings did not install the bundled firmware");
@@ -610,7 +611,8 @@ try {
         };
         window.deck.firmwareInfo = async () => ({
             appVersion: "0.2.0",
-            installed: { protocol: 7, version: "1.4.0" },
+            // A local build names itself after the release it follows.
+            installed: { protocol: 7, version: "1.4.0-3-gabc1234-dirty" },
             transport: "usb",
             bundled: { version: "1.4.0", protocol: 7 },
             latest: null,
@@ -621,8 +623,14 @@ try {
         window.dispatchEvent(new Event("focus"));
     });
     await expect(page.getByText("Firmware 1.4.0 installed. Decky is restarting.")).toHaveCount(0);
-    await expect(page.getByText("The deck's firmware is up to date.")).toBeVisible();
-    await expect(page.locator(".firmware-versions")).toContainText("v1.4.0 · protocol 7");
+    // Nothing to update: no update line and no button, just the versions.
+    await expect(page.getByText("up to date", { exact: false })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Update firmware/ })).toHaveCount(0);
+    // Shown as the release it follows: no build detail, no protocol.
+    await expect(page.locator(".firmware-versions")).toContainText("1.4.0");
+    await expect(page.locator(".firmware-versions")).not.toContainText("gabc1234");
+    await expect(page.locator(".firmware-versions")).not.toContainText("v1.4.0");
+    await expect(page.locator(".firmware-versions")).not.toContainText("protocol");
     await page.getByRole("button", { name: "Find Wi-Fi networks", exact: true }).click();
     await page.getByRole("option", { name: "Home Wi-Fi Strong" }).click();
     await expect(page.getByRole("option", { name: "Office Enterprise" })).toBeDisabled();
@@ -696,14 +704,14 @@ try {
     await expect(pill).toBeVisible();
     await pill.click();
     await expect(page.getByRole("region", { name: "Updates", exact: true })).toBeInViewport();
-    await expect(page.getByText("Decky v0.3.0 is available.")).toBeInViewport();
+    await expect(page.getByText("Decky 0.3.0 is available.")).toBeInViewport();
     await expect(
-        page.getByRole("button", { name: "Update firmware to v1.5.0", exact: true }),
+        page.getByRole("button", { name: "Update firmware to 1.5.0", exact: true }),
     ).toBeVisible();
     await page.screenshot({ path: "output/decky-updates.png" });
 
     // Decky updates itself on its own screen: download with progress, then install.
-    await page.getByRole("button", { name: "Update Decky to v0.3.0", exact: true }).click();
+    await page.getByRole("button", { name: "Update Decky to 0.3.0", exact: true }).click();
     if ((await page.evaluate(() => window.__appUpdateCalls.install)) !== 1)
         throw new Error("Update Decky did not start the update");
     await page.evaluate(() =>
@@ -751,7 +759,7 @@ try {
         });
         window.__updatesChanged();
     });
-    await page.getByRole("button", { name: "Download Decky v0.3.0", exact: true }).click();
+    await page.getByRole("button", { name: "Download Decky 0.3.0", exact: true }).click();
     await expect(page.getByText("The download opened in your browser.")).toBeVisible();
     // Back to nothing to update for the rest of the check.
     await page.evaluate(() => {

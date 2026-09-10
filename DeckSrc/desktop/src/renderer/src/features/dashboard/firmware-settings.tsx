@@ -82,8 +82,8 @@ export function FirmwareSettings() {
                         <dd>
                             {installed
                                 ? installed.version
-                                    ? `${formatVersion(installed.version)} · protocol ${installed.protocol}`
-                                    : `protocol ${installed.protocol}`
+                                    ? formatVersion(installed.version)
+                                    : "older firmware"
                                 : "not connected"}
                         </dd>
                     </div>
@@ -108,15 +108,12 @@ export function FirmwareSettings() {
                     )}
                 </>
             )}
-            {!info ? (
-                <p className="wifi-help">Checking for updates…</p>
-            ) : update ? (
+            {!info && <p className="wifi-help">Checking for updates…</p>}
+            {update && (
                 <p className="wifi-help">
-                    Firmware {formatVersion(update.version)} (protocol {update.protocol}) is
-                    available {update.source === "github" ? "on GitHub" : "with this app"}.
+                    Firmware {formatVersion(update.version)} is available{" "}
+                    {update.source === "github" ? "on GitHub" : "with this app"}.
                 </p>
-            ) : (
-                <p className="wifi-help">The deck&apos;s firmware is up to date.</p>
             )}
             {update && info?.transport === "wifi" && (
                 <p className="wifi-help">Connect the USB cable to update the firmware.</p>
