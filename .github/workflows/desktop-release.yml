@@ -1,0 +1,67 @@
+# Build the Windows installer, with the deck firmware inside it.
+#
+# Push a tag named desktop-v<version> (for example desktop-v0.3.0). The firmware
+# is built first, and its post-build step drops the images into
+# DeckSrc/desktop/resources/firmware/, which electron-builder packs into the
+# installer - so every desktop release can set up and update a deck by itself.
+#
+# The repository is stamped into package.json at build time, which is how an
+# installed app knows where to look for newer firmware releases. A fork builds
+# an app that checks the fork's releases.
+
+name: Desktop release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # git describe needs the firmware tags to version the bundled firmware.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build firmware into the desktop resources
+        run: |
+          pip install platformio
+          pio run -d DeckSrc/firmware
+          test -f DeckSrc/desktop/resources/firmware/manifest.json
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: DeckSrc/desktop/pnpm-lock.yaml
+
+      - name: Build the installer
+        working-directory: DeckSrc/desktop
+        run: |
+          node -e "const f='package.json';const p=require('./'+f);p.repository='github:'+process.env.GITHUB_REPOSITORY;require('fs').writeFileSync(f,JSON.stringify(p,null,4)+'\n')"
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm exec electron-builder --win nsis --publish never
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" DeckSrc/desktop/dist/*.exe \
+            --title "Decky ${GITHUB_REF_NAME#desktop-v}" \
+            --notes "Windows installer. Includes the deck firmware it was built with."

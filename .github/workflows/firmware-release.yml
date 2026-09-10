@@ -1,0 +1,45 @@
+# Publish deck firmware as a GitHub release.
+#
+# Push a tag named firmware-v<major>.<minor>.<patch> (for example firmware-v1.4.0)
+# and this builds the firmware with that version stamped in, then publishes the
+# release the desktop app's "Check GitHub for updates" looks for: manifest.json
+# plus the four flash images it lists. The desktop app downloads those assets,
+# checks every SHA-256 against the manifest, and installs them over USB.
+
+name: Firmware release
+
+on:
+  push:
+    tags: ["firmware-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build firmware
+        env:
+          # scripts/firmware_version.py strips the "firmware-v" prefix.
+          DECKY_FW_VERSION: ${{ github.ref_name }}
+          # scripts/bundle_for_desktop.py writes the release assets here.
+          DECKY_BUNDLE_DIR: ${{ runner.temp }}/firmware
+        run: pio run -d DeckSrc/firmware
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" "${{ runner.temp }}"/firmware/* \
+            --title "Deck firmware ${GITHUB_REF_NAME#firmware-v}" \
+            --notes "Install from Decky: Settings → Firmware → Check GitHub for updates, with the deck connected by USB."
