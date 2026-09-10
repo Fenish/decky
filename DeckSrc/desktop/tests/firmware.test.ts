@@ -96,17 +96,30 @@ describe("firmware packages", () => {
 });
 
 describe("firmware from GitHub releases", () => {
+    // One release per version carries the installer and the firmware files; the
+    // firmware keeps its own version, which only its manifest states.
+    const firmwareIn: Record<string, string> = {
+        "v0.5.0": "1.6.0",
+        "v0.4.1-beta": "1.5.0",
+        "v0.4.0": "1.4.0",
+        "v0.3.0": "1.3.0",
+    };
     const releases = [
-        { tag_name: "desktop-v2.0.0", assets: [{ name: "Decky-Setup.exe" }] },
-        { tag_name: "firmware-v1.5.0", draft: true, assets: [] },
-        { tag_name: "firmware-v1.6.0-beta", prerelease: true, assets: [] },
-        { tag_name: "firmware-v1.3.0", assets: [] },
-        { tag_name: "firmware-v1.4.0", assets: [] },
-    ].map((release) => ({
+        // Listed oldest first on purpose: the newest release wins by date, not by position.
+        { tag_name: "v0.3.0", published_at: "2026-09-01T10:00:00Z" },
+        { tag_name: "v0.4.0", published_at: "2026-09-03T10:00:00Z" },
+        { tag_name: "v0.5.0", draft: true, published_at: null },
+        { tag_name: "v0.4.1-beta", prerelease: true, published_at: "2026-09-04T10:00:00Z" },
+        { tag_name: "notes-only", published_at: "2026-09-05T10:00:00Z", firmware: false },
+    ].map(({ firmware = true, ...release }) => ({
         ...release,
         assets: [
-            ...release.assets,
-            ...(release.tag_name.startsWith("firmware")
+            {
+                name: "Decky-Setup.exe",
+                size: 90_000_000,
+                browser_download_url: "https://example.test/x",
+            },
+            ...(firmware
                 ? [
                       "manifest.json",
                       "bootloader.bin",
@@ -126,7 +139,7 @@ describe("firmware from GitHub releases", () => {
         vi.stubGlobal("fetch", async (url: string) => {
             if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
             const [, tag, name] = /example\.test\/([^/]+)\/(.+)$/.exec(url)!;
-            const version = tag!.replace("firmware-v", "");
+            const version = firmwareIn[tag!]!;
             if (name === "manifest.json")
                 return new Response(JSON.stringify(manifest({ version })));
             const data = IMAGES[name as keyof typeof IMAGES].slice();
@@ -139,9 +152,10 @@ describe("firmware from GitHub releases", () => {
         folder = "";
     });
 
-    it("picks the newest published firmware release, ignoring desktop tags, drafts and pre-releases", async () => {
+    it("reads the firmware from the newest published release, skipping drafts, pre-releases and releases without firmware", async () => {
         serve();
         const release = await latestRelease("someone/decky");
+        expect(release?.tag).toBe("v0.4.0");
         expect(release?.version).toBe("1.4.0");
         expect(release?.protocol).toBe(7);
     });

@@ -1,6 +1,7 @@
 /*---------------------------------------------------------------
  * Where firmware to install comes from: the copy bundled with this app, or the
- * newest firmware release on GitHub.
+ * newest release on GitHub. Each release carries the installer and the firmware
+ * files together; the firmware keeps its own version, stated in manifest.json.
  *
  * Either way it arrives as a manifest plus images, and nothing is handed to the
  * flasher until every image matches the manifest's SHA-256 and the manifest
@@ -19,6 +20,7 @@ export interface FirmwarePackage {
 }
 
 export interface FirmwareRelease {
+    /** The firmware's version, from the release's manifest - not the release tag. */
     version: string;
     protocol: number;
     tag: string;
@@ -26,8 +28,6 @@ export interface FirmwareRelease {
     assets: Map<string, string>;
 }
 
-/** Firmware release tags, e.g. `firmware-v1.4.0`. Desktop releases use their own prefix. */
-const RELEASE_TAG = /^firmware-v(\d+\.\d+\.\d+)$/;
 const MAX_ASSET_BYTES = 4 * 1024 * 1024;
 
 const sha256 = (data: Uint8Array): string => createHash("sha256").update(data).digest("hex");
@@ -89,7 +89,14 @@ async function fetchChecked(url: string, accept: string): Promise<Response> {
     return response;
 }
 
-/** The newest published firmware release, or null when there is none. */
+/**
+ * The firmware in the newest published release, or null when there is none.
+ *
+ * Releases are numbered for the app; the firmware inside only changes version
+ * when its own code changed, so its version is read from the manifest. The
+ * newest release always holds the newest firmware, because a release is built
+ * from everything on main at that point.
+ */
 export async function latestRelease(repository: string): Promise<FirmwareRelease | null> {
     const response = await fetchChecked(
         `https://api.github.com/repos/${repository}/releases?per_page=30`,
@@ -99,32 +106,37 @@ export async function latestRelease(repository: string): Promise<FirmwareRelease
         tag_name?: string;
         draft?: boolean;
         prerelease?: boolean;
+        published_at?: string | null;
         assets?: { name?: string; browser_download_url?: string; size?: number }[];
     }[];
-    const candidates: FirmwareRelease[] = [];
+    const candidates: (Omit<FirmwareRelease, "version" | "protocol"> & { published: number })[] =
+        [];
     for (const release of Array.isArray(releases) ? releases : []) {
-        const version = RELEASE_TAG.exec(release.tag_name ?? "")?.[1];
-        if (!version || release.draft || release.prerelease) continue;
+        if (!release.tag_name || release.draft || release.prerelease) continue;
         const assets = new Map<string, string>();
         for (const asset of release.assets ?? [])
             if (asset.name && asset.browser_download_url && (asset.size ?? 0) <= MAX_ASSET_BYTES)
                 assets.set(asset.name, asset.browser_download_url);
         if (assets.has("manifest.json"))
-            candidates.push({ version, protocol: 0, tag: release.tag_name!, assets });
+            candidates.push({
+                tag: release.tag_name,
+                assets,
+                published: Date.parse(release.published_at ?? "") || 0,
+            });
     }
-    const byVersion = (a: FirmwareRelease, b: FirmwareRelease): number => {
-        const [x, y] = [a, b].map((r) => r.version.split(".").map(Number));
-        for (let i = 0; i < 3; i++) if (x![i] !== y![i]) return y![i]! - x![i]!;
-        return 0;
-    };
-    const newest = candidates.sort(byVersion)[0];
+    const newest = candidates.sort((a, b) => b.published - a.published)[0];
     if (!newest) return null;
     const manifest = validateManifest(
         await (
             await fetchChecked(newest.assets.get("manifest.json")!, "application/octet-stream")
         ).json(),
     );
-    return { ...newest, protocol: manifest.protocol };
+    return {
+        tag: newest.tag,
+        assets: newest.assets,
+        version: manifest.version,
+        protocol: manifest.protocol,
+    };
 }
 
 /**
