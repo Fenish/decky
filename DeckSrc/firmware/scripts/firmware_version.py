@@ -43,6 +43,22 @@ version = describe()
 if not re.fullmatch(r"[\w.+-]{1,48}", version):
     version = "dev"
 
-env.Append(CPPDEFINES=[("DECKY_FW_VERSION", env.StringifyMacro(version))])  # noqa: F821
+# Into a header in the build folder rather than a compiler flag: a flag reaches
+# every file, so each new commit or tag recompiled all ~200 of them. Only
+# decky_version.h includes this, and it is rewritten only when the version
+# changes, so a new version recompiles main.cpp and nothing else.
+generated = os.path.join(env.subst("$BUILD_DIR"), "generated")  # noqa: F821
+os.makedirs(generated, exist_ok=True)
+header = os.path.join(generated, "decky_fw_version.h")
+content = f'#pragma once\n#define DECKY_FW_VERSION "{version}"\n'
+try:
+    with open(header, encoding="utf-8") as file:
+        current = file.read()
+except OSError:
+    current = ""
+if current != content:
+    with open(header, "w", encoding="utf-8") as file:
+        file.write(content)
+env.Append(CPPPATH=[generated])  # noqa: F821
 env.Replace(DECKY_FW_VERSION_PLAIN=version)  # noqa: F821 - read by bundle_for_desktop.py
 print(f"Decky firmware version: {version}")
