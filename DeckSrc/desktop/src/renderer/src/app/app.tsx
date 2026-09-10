@@ -22,6 +22,7 @@ export function App() {
                 transport={deck.status.connected ? transportOf(deck.status.identity) : null}
                 busy={deck.busy}
                 notify={deck.notify}
+                reducedMotion={deck.config.reducedMotion}
                 updates={updates.count}
                 onUpdates={dashboardShown ? () => dashboard.current?.openUpdates() : undefined}
             />

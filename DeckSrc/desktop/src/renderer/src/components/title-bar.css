@@ -144,3 +144,25 @@
 .titlebar-brand > span {
     text-shadow: 0 1px 7px #0009;
 }
+/* The background's light streaks run through the top-right corner too: shade it
+   behind the updates pill, the connection label and the window controls, the
+   way the corner behind the logo is shaded.
+   A separate element, not a pseudo-element of the title bar: Electron takes the
+   window's drag area from the title bar's boxes in page order, so an ::after
+   over the buttons re-covered them with drag area and swallowed every click. */
+.titlebar-shade {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: min(560px, 52vw);
+    height: 110px;
+    z-index: 49;
+    pointer-events: none;
+    background: radial-gradient(
+        ellipse at 100% 0,
+        #000000d9 0%,
+        #0000009c 36%,
+        #0000003d 58%,
+        transparent 78%
+    );
+}

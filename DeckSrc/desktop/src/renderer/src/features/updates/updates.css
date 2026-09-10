@@ -6,17 +6,59 @@
     gap: 6px;
     height: 26px;
     padding: 0 11px 0 9px;
-    border: 1px solid #e1c99d66;
+    border: 1px solid #e1c99d80;
     border-radius: 999px;
-    background: #e1c99d14;
-    color: #f4e6cb;
+    /* Dark frosted glass, so it reads over any part of the background. */
+    background: #13110dd9;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 12px #0009;
+    color: #f7ecd6;
     font-size: 11.5px;
     letter-spacing: 0.01em;
     white-space: nowrap;
+    transition:
+        background 0.18s,
+        border-color 0.18s,
+        color 0.18s,
+        box-shadow 0.18s;
+    /* A slow, soft breath of light, so an update is noticed without nagging. */
+    animation: updates-glow 2.8s ease-in-out infinite;
+}
+@keyframes updates-glow {
+    0%,
+    100% {
+        border-color: #e1c99d80;
+        box-shadow:
+            0 2px 12px #0009,
+            0 0 0 0 #e1c99d00;
+    }
+    50% {
+        border-color: #ecd9b0d9;
+        box-shadow:
+            0 2px 12px #0009,
+            0 0 14px 1px #e1c99d59;
+    }
+}
+/* Still for anyone who asked for less motion, in Decky or in Windows. */
+.titlebar-updates.still {
+    animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .titlebar-updates {
+        animation: none;
+    }
 }
 .titlebar-updates:hover {
-    background: #e1c99d29;
-    border-color: #e1c99daa;
+    animation: none;
+    background: #3d3426f2;
+    border-color: #ecd9b0;
+    color: #fff;
+    box-shadow:
+        0 0 0 3px #e1c99d1f,
+        0 2px 14px #000a;
+}
+.titlebar-updates:active {
+    background: #2a241af2;
 }
 
 /* The whole window while Decky updates itself; the title bar stays above it. */

@@ -12,6 +12,7 @@ export function TitleBar({
     notify,
     updates,
     onUpdates,
+    reducedMotion,
 }: {
     connected: boolean;
     /** Which connection is in use: USB whenever the cable answers, otherwise Wi-Fi. */
@@ -22,6 +23,8 @@ export function TitleBar({
     updates: number;
     /** Opens them in Settings; without it (no dashboard to open) the pill stays hidden. */
     onUpdates?: () => void;
+    /** Decky's own Reduce motion setting; the title bar sits outside the dashboard that applies it. */
+    reducedMotion: boolean;
 }) {
     const via = transport === "wifi" ? "Wi-Fi" : transport === "usb" ? "USB" : null;
     const [maximized, setMaximized] = useState(false);
@@ -48,61 +51,66 @@ export function TitleBar({
         }
     };
     return (
-        <header className="custom-titlebar">
-            <div className="titlebar-brand">
-                <Logo aria-hidden="true" />
-                <span>Decky</span>
-            </div>
-            <div className="titlebar-drag" />
-            {updates > 0 && onUpdates && (
-                <button
-                    className="titlebar-updates"
-                    title="Show updates in Settings"
-                    onClick={onUpdates}
+        <>
+            <div className="titlebar-shade" aria-hidden="true" />
+            <header className="custom-titlebar">
+                <div className="titlebar-brand">
+                    <Logo aria-hidden="true" />
+                    <span>Decky</span>
+                </div>
+                <div className="titlebar-drag" />
+                {updates > 0 && onUpdates && (
+                    <button
+                        className={`titlebar-updates ${reducedMotion ? "still" : ""}`}
+                        title="Show updates in Settings"
+                        onClick={onUpdates}
+                    >
+                        <CircleArrowUp size={14} aria-hidden="true" />
+                        {updates === 1 ? "1 update available" : `${updates} updates available`}
+                    </button>
+                )}
+                <div
+                    className="titlebar-status"
+                    role="status"
+                    aria-label={busy ? "Syncing keys" : connected ? "Connected" : "Disconnected"}
+                    title={
+                        busy
+                            ? "Syncing keys"
+                            : connected
+                              ? `Connected${via ? ` over ${via}` : ""}`
+                              : "Waiting for Decky"
+                    }
                 >
-                    <CircleArrowUp size={14} aria-hidden="true" />
-                    {updates === 1 ? "1 update available" : `${updates} updates available`}
-                </button>
-            )}
-            <div
-                className="titlebar-status"
-                role="status"
-                aria-label={busy ? "Syncing keys" : connected ? "Connected" : "Disconnected"}
-                title={
-                    busy
-                        ? "Syncing keys"
-                        : connected
-                          ? `Connected${via ? ` over ${via}` : ""}`
-                          : "Waiting for Decky"
-                }
-            >
-                <span className={`${connected ? "online" : "offline"} ${busy ? "syncing" : ""}`} />
-                {connected && via && <small className="titlebar-transport">{via}</small>}
-            </div>
-            <div className="window-controls">
-                <button
-                    aria-label="Minimize window"
-                    title="Minimize"
-                    onClick={() => void control("minimize")}
-                >
-                    <Minus size={17} />
-                </button>
-                <button
-                    aria-label={maximized ? "Restore window" : "Maximize window"}
-                    title={maximized ? "Restore" : "Maximize"}
-                    onClick={() => void control("maximize")}
-                >
-                    {maximized ? <Copy size={14} /> : <Square size={14} />}
-                </button>
-                <button
-                    className="window-close"
-                    aria-label="Close window"
-                    title="Close"
-                    onClick={() => void control("close")}
-                >
-                    <X size={19} />
-                </button>
-            </div>
-        </header>
+                    <span
+                        className={`${connected ? "online" : "offline"} ${busy ? "syncing" : ""}`}
+                    />
+                    {connected && via && <small className="titlebar-transport">{via}</small>}
+                </div>
+                <div className="window-controls">
+                    <button
+                        aria-label="Minimize window"
+                        title="Minimize"
+                        onClick={() => void control("minimize")}
+                    >
+                        <Minus size={17} />
+                    </button>
+                    <button
+                        aria-label={maximized ? "Restore window" : "Maximize window"}
+                        title={maximized ? "Restore" : "Maximize"}
+                        onClick={() => void control("maximize")}
+                    >
+                        {maximized ? <Copy size={14} /> : <Square size={14} />}
+                    </button>
+                    <button
+                        className="window-close"
+                        aria-label="Close window"
+                        title="Close"
+                        onClick={() => void control("close")}
+                    >
+                        <X size={19} />
+                    </button>
+                </div>
+            </header>
+        </>
     );
 }
