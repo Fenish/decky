@@ -1,0 +1,21 @@
+# Build output and dependencies - all reproducible, none of it belongs in history.
+DeckSrc/firmware/.pio/
+DeckSrc/desktop/node_modules/
+DeckSrc/desktop/out/
+DeckSrc/desktop/dist/
+
+# Tool caches
+.ruff_cache/
+__pycache__/
+*.pyc
+*.tsbuildinfo
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
+/node_modules/
+DeckSrc/desktop/output/
+factory-backup
+# Firmware images the PlatformIO post-build step copies into the desktop app.
+DeckSrc/desktop/resources/firmware/
