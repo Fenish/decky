@@ -31,3 +31,4 @@ assuming project context.
 - [serial-unplug-stall](serial-unplug-stall.md) — a write to an unplugged port never returns and stalls every deck command
 - [visual-tweaks-checked-by-hand](visual-tweaks-checked-by-hand.md) — styling changes: lint + UI checks, then hand over; the user checks the live app
 - [release-pipeline](release-pipeline.md) — every product-code push to main releases itself; firmware has its own version
+- [app-self-update](app-self-update.md) — installed Decky updates itself via electron-updater; the silent install is not yet seen on a real install

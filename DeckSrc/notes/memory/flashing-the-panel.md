@@ -25,7 +25,7 @@ PlatformIO still prints `[SUCCESS]` afterwards, so the failure is silent and
 the flash state is unknown. With it, the run ends with `Hash of data verified`,
 which is the only line that actually confirms the write.
 
-**The desktop app flashes the deck itself** (Settings → Firmware, or the
+**The desktop app flashes the deck itself** (Settings → Updates, or the
 Disconnected page for a new board) - see [[firmware-install]]. Decky holds the
 port while running, including from the tray, so quit it before flashing by other
 means.
