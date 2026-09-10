@@ -2,6 +2,7 @@
     "name": "decky",
     "version": "0.2.0",
     "description": "Decky — your personal touch control surface",
+    "repository": "github:Fenish/decky",
     "main": "out/main/index.js",
     "scripts": {
         "dev": "node scripts/ensure-electron.mjs && electron-vite dev",

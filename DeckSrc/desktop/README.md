@@ -236,8 +236,9 @@ version and the protocol number; packages that would touch NVS or the data parti
 before anything is written. GitHub releases tagged `firmware-v<x.y.z>` carry the same files;
 `.github/workflows/firmware-release.yml` builds and publishes them, and `desktop-release.yml` builds
 the installer for `desktop-v*` tags with the firmware inside. The app checks the repository named in
-package.json's `repository` field, which the release workflow stamps; without it, checking GitHub is
-unavailable.
+package.json's `repository` field (`github:Fenish/decky`); the release workflow overwrites it with
+the repository it runs in, so a fork's installer checks the fork. Without the field, checking GitHub
+is unavailable.
 
 **Versions.** The firmware version comes from the `firmware-v*` tag, or `git describe` for local
 builds, or `dev`. The protocol number lives only in `../firmware/include/decky_version.h`. An update
