@@ -189,6 +189,10 @@ floor.
   means the update stopped and the page returns.
 - `SDINFO`: mounted-card status and capacity. Commit/alternate replies report `stored=1` after
   successful persistence.
+- `DISPLAY_STATE`: scanout health for diagnosing a vertically slipped picture - the bounce position
+  at the last frame end (`pos=76800` when right), EOF interrupts per frame since the last ask
+  (`eofs=10..10` when right), slips corrected since boot, and the last page redraw in microseconds
+  (`draw=`, about 35000). `DISPLAY_RESYNC` restarts scanout by hand; nothing needs it.
 - `PAGE <index> <CRC32>`: load a cached page or stage a transfer. `cached=1` skips uploading.
   `copied=1 base=<CRC>` permits changed-key transfers from the current page.
 - `PUSH <cell> <bytes> <CRC32>`: little-endian RGB565, exactly `width × height × 2` bytes. `READY`
@@ -239,10 +243,12 @@ Decky installs the deck's firmware itself, over USB.
 
 - **Update:** Settings → Updates shows the installed version and offers a newer one when the app
   carries it or GitHub has it. Updating needs the USB cable; over Wi-Fi the section says so.
-- **First install:** a CrowPanel still running other firmware never answers as Decky. When a
-  USB-serial device stays silent for two checks, the Disconnected page offers to check it. Checking
-  restarts it into the chip's ROM bootloader after the user agrees; the install button appears only
-  for an ESP32-S3 with 4 MB of flash.
+- **First install:** a CrowPanel still running other firmware never answers as Decky. A USB-serial
+  device that stays silent when asked twice, a second apart, is offered on the Disconnected page:
+  "Install Decky on it?". Nothing touches it until the user clicks; the click restarts it into the
+  chip's ROM bootloader, and firmware is written only to an ESP32-S3 with 4 MB of flash. Anything
+  else is left as it was. A newly plugged-in device is looked at within about a second, not at the
+  next four-second poll.
 - **What is written:** the four images PlatformIO's upload writes - bootloader at `0x0`, partition
   table at `0x8000`, boot selector at `0xE000`, application at `0x10000` - at 460800 baud, each
   verified by MD5 on the chip. Never the Wi-Fi settings and pairing secret (NVS, `0x9000`), never
