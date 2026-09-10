@@ -39,7 +39,9 @@ try {
     });
     await page.goto("https://decky.test/");
     await page.locator(".disconnected-model[data-ready=true]").waitFor();
-    await expect(page.getByRole("heading", { name: "Connect Decky", exact: true })).toBeVisible();
+    await expect(
+        page.getByRole("heading", { name: "Decky is offline", exact: true }),
+    ).toBeVisible();
     await expect(page.locator(".sidebar")).toHaveCount(0);
     await expect(page.locator(".disconnected-screen").getByRole("button")).toHaveCount(0);
     await page.waitForTimeout(500);
@@ -158,7 +160,7 @@ try {
         window.__online = false;
         window.dispatchEvent(new Event("focus"));
     });
-    await page.getByRole("heading", { name: "Connect Decky", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Decky is offline", exact: true }).waitFor();
     await expect(page.locator(".sidebar")).not.toBeVisible();
     // A disconnect detected while rotating must cancel the reveal.
     await page.evaluate(() => {
@@ -184,7 +186,7 @@ try {
         window.__online = false;
         window.dispatchEvent(new Event("focus"));
     });
-    await page.getByRole("heading", { name: "Connect Decky", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Decky is offline", exact: true }).waitFor();
     for (const size of [
         { width: 1080, height: 760 },
         { width: 1920, height: 1080 },
@@ -193,7 +195,7 @@ try {
         await page.locator(".disconnected-model[data-ready=true]").waitFor();
         await page.waitForTimeout(350);
         const box = await page
-            .getByRole("heading", { name: "Connect Decky", exact: true })
+            .getByRole("heading", { name: "Decky is offline", exact: true })
             .boundingBox();
         if (
             !box ||

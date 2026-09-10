@@ -28,7 +28,7 @@ export function DisconnectedScreen({
         <main
             className={`disconnected-screen ${connected ? "is-entering" : ""} ${connected && phase === "zooming" ? "is-zooming" : ""} ${reducedMotion ? "reduce-motion" : ""}`}
             data-phase={connected ? phase : "waiting"}
-            aria-label={connected ? "Opening Decky" : "Connect Decky"}
+            aria-label={connected ? "Opening Decky" : "Decky is offline"}
         >
             <img className="disconnected-backdrop" src={background} alt="" draggable={false} />
             <div className="disconnected-scene">
@@ -45,8 +45,16 @@ export function DisconnectedScreen({
                 </div>
                 <div className="disconnected-connect">
                     <h1>
-                        Connect <strong>Decky</strong>
+                        <strong>Decky</strong> is offline
                     </h1>
+                    <p className="disconnected-help">
+                        Plug it in with a USB data cable, or power it on to reconnect over Wi-Fi.
+                    </p>
+                    {/* The live region below says the same for screen readers. */}
+                    <p className="disconnected-searching" aria-hidden="true">
+                        <span className="searching-dot" />
+                        Looking for Decky…
+                    </p>
                 </div>
             </div>
             {waiting && <FirstInstall key={waiting.path} device={waiting} />}
