@@ -37,6 +37,7 @@ export function installPreviewBridge(): void {
             latest: null,
             repository: null,
             update: null,
+            appUpdate: null,
         }),
         firmwareCheck: async () => ({
             appVersion: "preview",
@@ -46,12 +47,18 @@ export function installPreviewBridge(): void {
             latest: null,
             repository: null,
             update: null,
+            appUpdate: null,
         }),
         firmwareProbe: async () => {
             throw new Error("Open Decky desktop to check devices.");
         },
         firmwareInstall: unavailable,
         onFirmwareProgress: () => () => {},
+        onUpdatesChanged: () => () => {},
+        appUpdateInstall: async () => {},
+        appUpdateCancel: async () => {},
+        appUpdateDownload: unavailable,
+        onAppUpdateProgress: () => () => {},
         cachePages: unavailable,
         moveKey: async (from, to) => {
             config = moveKey(config, from, to).config;

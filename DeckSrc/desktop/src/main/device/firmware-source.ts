@@ -28,7 +28,28 @@ export interface FirmwareRelease {
     assets: Map<string, string>;
 }
 
+/** A newer Decky, as the newest release that carries a Windows installer. */
+export interface AppRelease {
+    version: string;
+    tag: string;
+    /** The release's page on GitHub. */
+    page: string;
+    /** Download URL of the installer. */
+    installer: string;
+}
+
+interface GitHubRelease {
+    tag_name?: string;
+    draft?: boolean;
+    prerelease?: boolean;
+    published_at?: string | null;
+    html_url?: string;
+    assets?: { name?: string; browser_download_url?: string; size?: number }[];
+}
+
 const MAX_ASSET_BYTES = 4 * 1024 * 1024;
+const APP_TAG = /^v(\d+\.\d+\.\d+)$/;
+const INSTALLER = /^Decky-Setup-[\w.+-]+\.exe$/;
 
 const sha256 = (data: Uint8Array): string => createHash("sha256").update(data).digest("hex");
 
@@ -89,6 +110,26 @@ async function fetchChecked(url: string, accept: string): Promise<Response> {
     return response;
 }
 
+async function fetchReleases(repository: string): Promise<GitHubRelease[]> {
+    const response = await fetchChecked(
+        `https://api.github.com/repos/${repository}/releases?per_page=30`,
+        "application/vnd.github+json",
+    );
+    const releases = (await response.json()) as unknown;
+    return Array.isArray(releases) ? (releases as GitHubRelease[]) : [];
+}
+
+/** Published releases - no drafts, no pre-releases - newest first. */
+function published(releases: GitHubRelease[]): (GitHubRelease & { tag_name: string })[] {
+    return releases
+        .filter((r): r is GitHubRelease & { tag_name: string } =>
+            Boolean(r.tag_name && !r.draft && !r.prerelease),
+        )
+        .map((release) => ({ release, at: Date.parse(release.published_at ?? "") || 0 }))
+        .sort((a, b) => b.at - a.at)
+        .map(({ release }) => release);
+}
+
 /**
  * The firmware in the newest published release, or null when there is none.
  *
@@ -97,34 +138,18 @@ async function fetchChecked(url: string, accept: string): Promise<Response> {
  * newest release always holds the newest firmware, because a release is built
  * from everything on main at that point.
  */
-export async function latestRelease(repository: string): Promise<FirmwareRelease | null> {
-    const response = await fetchChecked(
-        `https://api.github.com/repos/${repository}/releases?per_page=30`,
-        "application/vnd.github+json",
-    );
-    const releases = (await response.json()) as {
-        tag_name?: string;
-        draft?: boolean;
-        prerelease?: boolean;
-        published_at?: string | null;
-        assets?: { name?: string; browser_download_url?: string; size?: number }[];
-    }[];
-    const candidates: (Omit<FirmwareRelease, "version" | "protocol"> & { published: number })[] =
-        [];
-    for (const release of Array.isArray(releases) ? releases : []) {
-        if (!release.tag_name || release.draft || release.prerelease) continue;
+async function firmwareIn(releases: GitHubRelease[]): Promise<FirmwareRelease | null> {
+    let newest: Omit<FirmwareRelease, "version" | "protocol"> | null = null;
+    for (const release of published(releases)) {
         const assets = new Map<string, string>();
         for (const asset of release.assets ?? [])
             if (asset.name && asset.browser_download_url && (asset.size ?? 0) <= MAX_ASSET_BYTES)
                 assets.set(asset.name, asset.browser_download_url);
-        if (assets.has("manifest.json"))
-            candidates.push({
-                tag: release.tag_name,
-                assets,
-                published: Date.parse(release.published_at ?? "") || 0,
-            });
+        if (assets.has("manifest.json")) {
+            newest = { tag: release.tag_name, assets };
+            break;
+        }
     }
-    const newest = candidates.sort((a, b) => b.published - a.published)[0];
     if (!newest) return null;
     const manifest = validateManifest(
         await (
@@ -137,6 +162,39 @@ export async function latestRelease(repository: string): Promise<FirmwareRelease
         version: manifest.version,
         protocol: manifest.protocol,
     };
+}
+
+/** The newest published Decky with a Windows installer, or null when there is none. */
+function appIn(releases: GitHubRelease[], repository: string): AppRelease | null {
+    for (const release of published(releases)) {
+        const version = APP_TAG.exec(release.tag_name)?.[1];
+        const installer = release.assets?.find((asset) =>
+            INSTALLER.test(asset.name ?? ""),
+        )?.browser_download_url;
+        if (version && installer)
+            return {
+                version,
+                tag: release.tag_name,
+                page:
+                    release.html_url ??
+                    `https://github.com/${repository}/releases/tag/${release.tag_name}`,
+                installer,
+            };
+    }
+    return null;
+}
+
+/** The newest firmware in a published release. */
+export async function latestRelease(repository: string): Promise<FirmwareRelease | null> {
+    return firmwareIn(await fetchReleases(repository));
+}
+
+/** The newest firmware and the newest Decky, from one look at the release list. */
+export async function latestReleases(
+    repository: string,
+): Promise<{ firmware: FirmwareRelease | null; app: AppRelease | null }> {
+    const releases = await fetchReleases(repository);
+    return { firmware: await firmwareIn(releases), app: appIn(releases, repository) };
 }
 
 /**

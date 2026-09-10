@@ -43,7 +43,21 @@ export interface FirmwareInfo {
     repository: string | null;
     /** The best newer firmware for the connected deck, if there is one. */
     update: FirmwareOffer | null;
+    /** A newer Decky on GitHub, if there is one. */
+    appUpdate: AppUpdateOffer | null;
 }
+export interface AppUpdateOffer {
+    version: string;
+    /** An installed Decky updates itself; a development build can only open the download. */
+    canInstall: boolean;
+}
+/** Stages of Decky updating itself, shown on the update screen. */
+export type AppUpdateProgress =
+    | { stage: "checking" }
+    | { stage: "downloading"; version: string; percent: number; transferred: number; total: number }
+    | { stage: "installing"; version: string }
+    | { stage: "failed"; message: string }
+    | { stage: "cancelled" };
 export type FirmwareProgress =
     | { stage: "downloading" }
     | { stage: "connecting" }
@@ -123,8 +137,16 @@ export interface DeckApi {
     onWindowState(handler: (state: WindowState) => void): () => void;
     status(): Promise<DeckStatus>;
     firmwareInfo(): Promise<FirmwareInfo>;
-    /** Ask GitHub for the newest firmware release. */
+    /** Ask GitHub for the newest release, for both Decky and the deck's firmware. */
     firmwareCheck(): Promise<FirmwareInfo>;
+    /** GitHub was checked in the background and may know of newer releases. */
+    onUpdatesChanged(handler: () => void): () => void;
+    /** Download the newest Decky and install it silently; stages arrive through onAppUpdateProgress. */
+    appUpdateInstall(): Promise<void>;
+    appUpdateCancel(): Promise<void>;
+    /** Open the newest installer's download in the browser. */
+    appUpdateDownload(): Promise<Reply>;
+    onAppUpdateProgress(handler: (progress: AppUpdateProgress) => void): () => void;
     /** Restart a silent USB device into its bootloader and read what chip it is. */
     firmwareProbe(path: string): Promise<DeviceCheck>;
     firmwareInstall(request: FirmwareInstallRequest): Promise<FirmwareInstallResult>;

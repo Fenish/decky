@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Cpu, RefreshCw } from "lucide-react";
+import { CircleArrowUp, RefreshCw } from "lucide-react";
 import type { FirmwareInfo } from "../../../../shared/api";
 import { InstallProgress, formatVersion } from "../firmware/install-progress";
 import { useFirmwareInstall } from "../firmware/use-firmware-install";
@@ -9,7 +9,7 @@ const clean = (error: unknown): string =>
         .replace(/^Error: /, "")
         .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 
-/** Settings section: what firmware the deck runs, and updating it. */
+/** Settings section: the versions running, and updating Decky and the deck's firmware. */
 export function FirmwareSettings() {
     const [info, setInfo] = useState<FirmwareInfo | null>(null);
     const [checking, setChecking] = useState(false);
@@ -18,14 +18,20 @@ export function FirmwareSettings() {
 
     useEffect(() => {
         let live = true;
-        void window.deck
-            .firmwareInfo()
-            .then((next) => {
-                if (live) setInfo(next);
-            })
-            .catch((error) => live && setNote(clean(error)));
+        const load = (): void => {
+            void window.deck
+                .firmwareInfo()
+                .then((next) => {
+                    if (live) setInfo(next);
+                })
+                .catch((error) => live && setNote(clean(error)));
+        };
+        load();
+        // The background check can find a release while Settings is open.
+        const off = window.deck.onUpdatesChanged(load);
         return () => {
             live = false;
+            off();
         };
     }, []);
 
@@ -35,11 +41,10 @@ export function FirmwareSettings() {
         try {
             const next = await window.deck.firmwareCheck();
             setInfo(next);
-            if (!next.latest) setNote("No firmware releases are published on GitHub yet.");
-            else if (!next.update)
-                setNote(
-                    `The newest release is ${formatVersion(next.latest.version)}. You are up to date.`,
-                );
+            if (!next.latest && !next.appUpdate)
+                setNote("No releases are published on GitHub yet.");
+            else if (!next.update && !next.appUpdate)
+                setNote("Decky and the deck's firmware are up to date.");
         } catch (error) {
             setNote(clean(error));
         } finally {
@@ -47,15 +52,23 @@ export function FirmwareSettings() {
         }
     }, []);
 
+    const openDownload = (): void => {
+        void window.deck
+            .appUpdateDownload()
+            .then((reply) => setNote(reply.message))
+            .catch((error) => setNote(clean(error)));
+    };
+
     const installed = info?.installed;
     const update = info?.update ?? null;
+    const appUpdate = info?.appUpdate ?? null;
     const idle = state.phase === "idle";
 
     return (
-        <section className="wifi-settings firmware-settings" aria-label="Firmware">
+        <section className="wifi-settings firmware-settings" aria-label="Updates">
             <div className="wifi-heading">
                 <h3>
-                    <Cpu size={18} /> Firmware
+                    <CircleArrowUp size={18} /> Updates
                 </h3>
             </div>
             {info && (
@@ -76,8 +89,27 @@ export function FirmwareSettings() {
                     </div>
                 </dl>
             )}
+            {appUpdate && (
+                <>
+                    <p className="wifi-help">
+                        Decky {formatVersion(appUpdate.version)} is available.
+                    </p>
+                    {appUpdate.canInstall ? (
+                        <button
+                            className="button primary wifi-wide"
+                            onClick={() => void window.deck.appUpdateInstall()}
+                        >
+                            Update Decky to {formatVersion(appUpdate.version)}
+                        </button>
+                    ) : (
+                        <button className="button primary wifi-wide" onClick={openDownload}>
+                            Download Decky {formatVersion(appUpdate.version)}
+                        </button>
+                    )}
+                </>
+            )}
             {!info ? (
-                <p className="wifi-help">Checking firmware…</p>
+                <p className="wifi-help">Checking for updates…</p>
             ) : update ? (
                 <p className="wifi-help">
                     Firmware {formatVersion(update.version)} (protocol {update.protocol}) is
@@ -94,7 +126,7 @@ export function FirmwareSettings() {
                     className="button primary wifi-wide"
                     onClick={() => void install({ source: update.source })}
                 >
-                    Update to {formatVersion(update.version)}
+                    Update firmware to {formatVersion(update.version)}
                 </button>
             )}
             {idle && info?.repository && (

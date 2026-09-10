@@ -25,7 +25,7 @@ them independently.
 
 ## Install
 
-Use the Decky desktop app: Settings → Firmware, or, for a board that has never
+Use the Decky desktop app: Settings → Updates, or, for a board that has never
 run Decky, the offer on its Disconnected page. Without the app,
 `tools/flash.ps1` builds and writes the application; `-Full` writes all four
 images, which a first install needs. Flash at 460800 baud, not the board default

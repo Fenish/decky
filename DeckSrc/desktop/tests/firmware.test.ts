@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isNewerFirmware, validateManifest } from "../src/shared/firmware";
-import { downloadRelease, latestRelease, repositoryOf } from "../src/main/device/firmware-source";
+import {
+    downloadRelease,
+    latestRelease,
+    latestReleases,
+    repositoryOf,
+} from "../src/main/device/firmware-source";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -113,12 +118,17 @@ describe("firmware from GitHub releases", () => {
         { tag_name: "notes-only", published_at: "2026-09-05T10:00:00Z", firmware: false },
     ].map(({ firmware = true, ...release }) => ({
         ...release,
+        html_url: `https://github.com/someone/decky/releases/tag/${release.tag_name}`,
         assets: [
-            {
-                name: "Decky-Setup.exe",
-                size: 90_000_000,
-                browser_download_url: "https://example.test/x",
-            },
+            ...(firmware
+                ? [
+                      {
+                          name: `Decky-Setup-${release.tag_name.slice(1)}.exe`,
+                          size: 90_000_000,
+                          browser_download_url: `https://example.test/${release.tag_name}/installer`,
+                      },
+                  ]
+                : []),
             ...(firmware
                 ? [
                       "manifest.json",
@@ -158,6 +168,18 @@ describe("firmware from GitHub releases", () => {
         expect(release?.tag).toBe("v0.4.0");
         expect(release?.version).toBe("1.4.0");
         expect(release?.protocol).toBe(7);
+    });
+
+    it("finds the newest Decky with an installer from the same release list", async () => {
+        serve();
+        const { app, firmware } = await latestReleases("someone/decky");
+        expect(app).toEqual({
+            version: "0.4.0",
+            tag: "v0.4.0",
+            page: "https://github.com/someone/decky/releases/tag/v0.4.0",
+            installer: "https://example.test/v0.4.0/installer",
+        });
+        expect(firmware?.version).toBe("1.4.0");
     });
 
     it("downloads and verifies a release, and refuses one whose image was altered", async () => {

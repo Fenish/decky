@@ -1,0 +1,85 @@
+/* The title bar's "N updates available" pill, left of the connection dot. */
+.titlebar-updates {
+    -webkit-app-region: no-drag;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 11px 0 9px;
+    border: 1px solid #e1c99d66;
+    border-radius: 999px;
+    background: #e1c99d14;
+    color: #f4e6cb;
+    font-size: 11.5px;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+.titlebar-updates:hover {
+    background: #e1c99d29;
+    border-color: #e1c99daa;
+}
+
+/* The whole window while Decky updates itself; the title bar stays above it. */
+.app-update-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: #080807d9;
+    backdrop-filter: blur(12px);
+}
+.app-update-card {
+    width: min(440px, 100%);
+    padding: 30px 30px 26px;
+    border: 1px solid #dfd2b35c;
+    border-top-color: #efe6d18a;
+    border-radius: 20px;
+    background: linear-gradient(145deg, #24231d90, #090909f0 45%);
+    box-shadow: 0 16px 40px #0008;
+    color: #eee8da;
+    text-align: center;
+}
+.app-update-logo {
+    display: block;
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 16px;
+    color: #fff;
+}
+.app-update-card h2 {
+    margin: 0 0 18px;
+    font-size: 18px;
+    font-weight: 600;
+}
+.app-update-detail {
+    margin: 12px 0 0;
+    color: #b7ae9b;
+    font-size: 12.5px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+.app-update-card .firmware-actions {
+    justify-content: center;
+    margin-top: 18px;
+}
+
+/* The Updates section, briefly lit when the pill brings Settings to it. */
+.updates-anchor.revealed {
+    animation: updates-reveal 1.6s ease-out;
+    border-radius: 12px;
+}
+@keyframes updates-reveal {
+    from {
+        background: #e1c99d1f;
+    }
+    to {
+        background: transparent;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .updates-anchor.revealed {
+        animation: none;
+    }
+}

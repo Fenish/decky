@@ -1,5 +1,5 @@
 import type { KeyLocation } from "../../../../shared/key-layout";
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
     ChevronDown,
@@ -46,23 +46,33 @@ interface DashboardProps {
     /** Changes when the deck disconnects or comes back running other firmware. */
     firmwareKey: string;
 }
-export function Dashboard({
-    hidden,
-    config,
-    loaded,
-    busy,
-    pressedCell,
-    keyStates,
-    save,
-    navigate,
-    sync,
-    notify,
-    message,
-    clearMessage,
-    onImport,
-    firmwareKey,
-}: DashboardProps) {
+/** What the title bar can ask of the dashboard. */
+export interface DashboardHandle {
+    /** Open Settings at the Updates section. */
+    openUpdates(): void;
+}
+export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Dashboard(
+    {
+        hidden,
+        config,
+        loaded,
+        busy,
+        pressedCell,
+        keyStates,
+        save,
+        navigate,
+        sync,
+        notify,
+        message,
+        clearMessage,
+        onImport,
+        firmwareKey,
+    }: DashboardProps,
+    ref,
+) {
     const [panel, setPanel] = useState<"key" | "pages" | "settings">("key");
+    // Counts requests to bring the Updates section into view; Settings scrolls on each.
+    const [revealUpdates, setRevealUpdates] = useState(0);
     const [panelOpen, setPanelOpen] = useState(false);
     const [previewOn, setPreviewOn] = useState(false);
     const [selection, setSelection] = useState<Selection | null>(null);
@@ -97,6 +107,14 @@ export function Dashboard({
         else action();
     };
     const close = (): void => guard(() => setPanelOpen(false));
+    useImperativeHandle(ref, () => ({
+        openUpdates: () =>
+            guard(() => {
+                setPanel("settings");
+                setPanelOpen(true);
+                setRevealUpdates((count) => count + 1);
+            }),
+    }));
     const openPage = (id: string): void =>
         guard(() => {
             void navigate(id)
@@ -577,6 +595,7 @@ export function Dashboard({
                             onClose={close}
                             notify={notify}
                             firmwareKey={firmwareKey}
+                            revealUpdates={revealUpdates}
                         />
                     ) : null}
                 </div>
@@ -682,4 +701,4 @@ export function Dashboard({
             )}
         </div>
     );
-}
+});

@@ -13,7 +13,7 @@ import {
 } from "./device/wifi";
 import type { WifiPair } from "./device/wifi";
 import type { WifiStatus } from "../shared/api";
-import { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, shell } from "electron";
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { crc32, DeckLink } from "./device/serial";
@@ -29,14 +29,17 @@ import { flashFirmware, PartitionChangeError, probeDevice } from "./device/flash
 import {
     bundledManifest,
     downloadRelease,
-    latestRelease,
+    latestReleases,
     loadPackage,
     repositoryOf,
+    type AppRelease,
     type FirmwarePackage,
     type FirmwareRelease,
 } from "./device/firmware-source";
+import { cancelAppUpdate, canInstallUpdates, installAppUpdate } from "./app-update";
 import { isNewerFirmware } from "../shared/firmware";
 import type {
+    AppUpdateProgress,
     FirmwareInfo,
     FirmwareInstallRequest,
     FirmwareInstallResult,
@@ -74,6 +77,10 @@ const NOT_THIS_DECK_MS = 30_000;
 const usbProbe = new DeckLink();
 // The newest GitHub firmware release, once the user has asked for it.
 let latestFirmware: FirmwareRelease | null = null;
+// The newest Decky on GitHub. Both are refreshed in the background.
+let latestApp: AppRelease | null = null;
+const UPDATE_CHECK_MS = 15 * 60_000;
+let updateCheck: Promise<void> | null = null;
 // Silent USB devices the user checked and that turned out to be a CrowPanel.
 // A first install is only allowed on one of these.
 const confirmedCrowPanels = new Set<string>();
@@ -121,7 +128,30 @@ async function firmwareInfo(): Promise<FirmwareInfo> {
             : null,
         repository: firmwareRepository(),
         update: best ?? null,
+        appUpdate:
+            latestApp && isNewerFirmware(latestApp.version, app.getVersion())
+                ? { version: latestApp.version, canInstall: canInstallUpdates() }
+                : null,
     };
+}
+
+/**
+ * Ask GitHub for the newest release, for Decky and the deck's firmware alike,
+ * and tell the window. One check at a time: a manual check during the
+ * background one waits for it rather than asking twice.
+ */
+function checkForUpdates(): Promise<void> {
+    updateCheck ??= (async () => {
+        const repository = firmwareRepository();
+        if (!repository) throw new Error("No GitHub repository is set for releases.");
+        const found = await latestReleases(repository);
+        latestFirmware = found.firmware;
+        latestApp = found.app;
+        if (window && !window.isDestroyed()) window.webContents.send("updates:changed");
+    })().finally(() => {
+        updateCheck = null;
+    });
+    return updateCheck;
 }
 
 async function installFirmware(request: unknown): Promise<FirmwareInstallResult> {
@@ -547,10 +577,32 @@ function registerHandlers(): void {
     );
     handle("firmware:info", () => firmwareInfo());
     handle("firmware:check", async () => {
-        const repository = firmwareRepository();
-        if (!repository) throw new Error("No GitHub repository is set for firmware releases.");
-        latestFirmware = await latestRelease(repository);
+        await checkForUpdates();
         return firmwareInfo();
+    });
+    handle("app-update:install", () =>
+        installAppUpdate(
+            (progress: AppUpdateProgress) => {
+                if (window && !window.isDestroyed())
+                    window.webContents.send("app-update:progress", progress);
+            },
+            // Quitting for the installer is a real quit, not a hide to the tray.
+            () => {
+                quitting = true;
+            },
+        ),
+    );
+    handle("app-update:cancel", () => cancelAppUpdate());
+    handle("app-update:download", async (): Promise<Reply> => {
+        // Only a URL this process read from GitHub itself is ever opened.
+        const target = latestApp?.installer ?? latestApp?.page;
+        if (!target?.startsWith("https://github.com/"))
+            return {
+                ok: false,
+                message: "No Decky release is known yet. Check GitHub for updates.",
+            };
+        await shell.openExternal(target);
+        return { ok: true, message: "The download opened in your browser." };
     });
     handle("firmware:probe", (path) =>
         serial(async () => {
@@ -858,6 +910,11 @@ else {
             (_webContents, _permission, callback) => callback(false),
         );
         registerHandlers();
+        // Look for newer releases shortly after starting, then every 15 minutes -
+        // also while Decky sits in the tray. Offline just means trying again later.
+        const backgroundCheck = (): void => void checkForUpdates().catch(() => {});
+        setTimeout(backgroundCheck, 5_000).unref();
+        setInterval(backgroundCheck, UPDATE_CHECK_MS).unref();
         heartbeat = setInterval(() => {
             if (quitting || heartbeatPending || !status.connected || status.identity.protocol < 3)
                 return;

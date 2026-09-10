@@ -206,13 +206,29 @@ both as a centered group; labels use the accent color. Hover over an uploaded im
 The dock duplicates the selected key; drag a key onto an empty cell to move it or an occupied cell
 to swap it.
 
+## Updates
+
+Decky checks GitHub for a newer release a few seconds after starting and then every 15 minutes,
+also while it sits in the tray. When Decky or the deck's firmware can be updated, the title bar
+shows a pill left of the connection dot, such as **2 updates available**; it opens Settings and
+scrolls to the Updates section, which lists the app and firmware versions and an update button for
+each. **Check GitHub for updates** checks at once.
+
+- **Decky itself:** an installed Decky updates in place. **Update Decky** opens an update screen
+  over the window: electron-updater downloads the newest release's installer with progress (it can
+  be cancelled), checks its SHA-512 against the release's `latest.yml`, and runs it silently; the
+  installer closes Decky and opens the new version. Keys, pages and pairing live in `%APPDATA%` and
+  are kept. If the update fails, Decky keeps running and the screen offers the installer instead. A
+  development build cannot replace itself and offers the download instead. `src/main/app-update.ts`
+  holds the flow; the release carries `latest.yml` and the installer's blockmap for it.
+- **Firmware:** covered below; it updates from the same section.
+
 ## Firmware
 
 Decky installs the deck's firmware itself, over USB.
 
-- **Update:** Settings → Firmware shows the installed version and offers a newer one when the app
-  carries it or GitHub has it (Check GitHub for updates). Updating needs the USB cable; over Wi-Fi
-  the section says so.
+- **Update:** Settings → Updates shows the installed version and offers a newer one when the app
+  carries it or GitHub has it. Updating needs the USB cable; over Wi-Fi the section says so.
 - **First install:** a CrowPanel still running other firmware never answers as Decky. When a
   USB-serial device stays silent for two checks, the Disconnected page offers to check it. Checking
   restarts it into the chip's ROM bootloader after the user agrees; the install button appears only

@@ -73,7 +73,13 @@ try {
             latest: null,
             repository: "someone/decky",
             update: { source: "bundled", version: "1.4.0", protocol: 7 },
+            appUpdate: null,
         };
+        const updateListeners = new Set();
+        const appUpdateListeners = new Set();
+        window.__updatesChanged = () => updateListeners.forEach((fn) => fn());
+        window.__appUpdate = (progress) => appUpdateListeners.forEach((fn) => fn(progress));
+        window.__appUpdateCalls = { install: 0, cancel: 0, download: 0 };
         window.deck = {
             firmwareInfo: async () => ({ ...firmware }),
             firmwareCheck: async () => ({ ...firmware, latest: { version: "1.4.0", protocol: 7 } }),
@@ -87,6 +93,18 @@ try {
                 return { ok: true, message: "Firmware 1.4.0 installed. Decky is restarting." };
             },
             onFirmwareProgress: () => () => {},
+            onUpdatesChanged: (fn) => listen(updateListeners, fn),
+            appUpdateInstall: async () => {
+                window.__appUpdateCalls.install += 1;
+            },
+            appUpdateCancel: async () => {
+                window.__appUpdateCalls.cancel += 1;
+            },
+            appUpdateDownload: async () => {
+                window.__appUpdateCalls.download += 1;
+                return { ok: true, message: "The download opened in your browser." };
+            },
+            onAppUpdateProgress: (fn) => listen(appUpdateListeners, fn),
             wifiStatus: async () => ({ ...wifi }),
             wifiScan: async () => [
                 { ssid: "Home Wi-Fi", rssi: -42, security: "password" },
@@ -558,8 +576,12 @@ try {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(page.getByRole("button", { name: "Export profile", exact: true })).toBeVisible();
-    // Firmware: the bundled release is newer than the deck's, so it is offered.
-    await expect(page.getByRole("region", { name: "Firmware", exact: true })).toBeVisible();
+    // Firmware: the bundled release is newer than the deck's, so it is offered,
+    // and the title bar counts it.
+    await expect(
+        page.getByRole("button", { name: "1 update available", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Updates", exact: true })).toBeVisible();
     const versions = page.locator(".firmware-versions");
     await expect(versions).toContainText("App");
     await expect(versions).toContainText("v0.2.0");
@@ -569,7 +591,7 @@ try {
     await expect(
         page.getByRole("button", { name: "Check GitHub for updates", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Update to v1.4.0", exact: true }).click();
+    await page.getByRole("button", { name: "Update firmware to v1.4.0", exact: true }).click();
     await expect(page.getByText("Firmware 1.4.0 installed. Decky is restarting.")).toBeVisible();
     if ((await page.evaluate(() => window.__firmwareInstall))?.source !== "bundled")
         throw new Error("Settings did not install the bundled firmware");
@@ -594,6 +616,7 @@ try {
             latest: null,
             repository: "someone/decky",
             update: null,
+            appUpdate: null,
         });
         window.dispatchEvent(new Event("focus"));
     });
@@ -654,6 +677,93 @@ try {
     await expect(
         page.getByRole("button", { name: "Close settings", exact: true }),
     ).toBeInViewport();
+    await page.getByRole("button", { name: "Close settings", exact: true }).click();
+
+    // Nothing to update: no pill.
+    await expect(page.locator(".titlebar-updates")).toHaveCount(0);
+    // The background check finds a new Decky and new firmware: the pill counts
+    // both and opens Settings at the Updates section.
+    await page.evaluate(() => {
+        const previous = window.deck.firmwareInfo;
+        window.deck.firmwareInfo = async () => ({
+            ...(await previous()),
+            appUpdate: { version: "0.3.0", canInstall: true },
+            update: { source: "github", version: "1.5.0", protocol: 7 },
+        });
+        window.__updatesChanged();
+    });
+    const pill = page.getByRole("button", { name: "2 updates available", exact: true });
+    await expect(pill).toBeVisible();
+    await pill.click();
+    await expect(page.getByRole("region", { name: "Updates", exact: true })).toBeInViewport();
+    await expect(page.getByText("Decky v0.3.0 is available.")).toBeInViewport();
+    await expect(
+        page.getByRole("button", { name: "Update firmware to v1.5.0", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: "output/decky-updates.png" });
+
+    // Decky updates itself on its own screen: download with progress, then install.
+    await page.getByRole("button", { name: "Update Decky to v0.3.0", exact: true }).click();
+    if ((await page.evaluate(() => window.__appUpdateCalls.install)) !== 1)
+        throw new Error("Update Decky did not start the update");
+    await page.evaluate(() =>
+        window.__appUpdate({
+            stage: "downloading",
+            version: "0.3.0",
+            percent: 42.4,
+            transferred: 44_000_000,
+            total: 104_000_000,
+        }),
+    );
+    const updating = page.getByRole("dialog", { name: "Updating Decky", exact: true });
+    await expect(updating).toContainText("Downloading Decky 0.3.0");
+    await expect(updating).toContainText("42% · 42.0 of 99.2 MB");
+    await expect(updating.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+    await page.screenshot({ path: "output/decky-app-update.png" });
+    await updating.getByRole("button", { name: "Cancel", exact: true }).click();
+    if ((await page.evaluate(() => window.__appUpdateCalls.cancel)) !== 1)
+        throw new Error("Cancel did not reach the updater");
+    await page.evaluate(() => window.__appUpdate({ stage: "cancelled" }));
+    await expect(updating).toHaveCount(0);
+    // A failed update keeps this version and offers the installer instead.
+    await page.evaluate(() =>
+        window.__appUpdate({ stage: "failed", message: "GitHub could not be reached." }),
+    );
+    await expect(updating).toContainText("The update didn't finish");
+    await expect(updating).toContainText("GitHub could not be reached.");
+    await updating.getByRole("button", { name: "Download installer", exact: true }).click();
+    await expect(updating).toContainText("The download opened in your browser.");
+    await updating.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(updating).toHaveCount(0);
+    // Installing needs nothing from the user: Decky restarts by itself.
+    await page.evaluate(() => window.__appUpdate({ stage: "installing", version: "0.3.0" }));
+    await expect(updating).toContainText("Installing Decky 0.3.0");
+    await expect(updating).toContainText("Decky closes and opens again by itself in a moment.");
+    await expect(updating.getByRole("button")).toHaveCount(0);
+    await page.evaluate(() => window.__appUpdate({ stage: "cancelled" }));
+
+    // A development build cannot replace itself, so it offers the download.
+    await page.evaluate(() => {
+        const previous = window.deck.firmwareInfo;
+        window.deck.firmwareInfo = async () => ({
+            ...(await previous()),
+            appUpdate: { version: "0.3.0", canInstall: false },
+        });
+        window.__updatesChanged();
+    });
+    await page.getByRole("button", { name: "Download Decky v0.3.0", exact: true }).click();
+    await expect(page.getByText("The download opened in your browser.")).toBeVisible();
+    // Back to nothing to update for the rest of the check.
+    await page.evaluate(() => {
+        const previous = window.deck.firmwareInfo;
+        window.deck.firmwareInfo = async () => ({
+            ...(await previous()),
+            appUpdate: null,
+            update: null,
+        });
+        window.__updatesChanged();
+    });
+    await expect(page.locator(".titlebar-updates")).toHaveCount(0);
     await page.getByRole("button", { name: "Close settings", exact: true }).click();
     await page.setViewportSize({ width: 1080, height: 760 });
     await page.getByRole("button", { name: "Key 4: Go live", exact: true }).click();
