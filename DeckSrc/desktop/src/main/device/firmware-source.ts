@@ -1,7 +1,8 @@
 /*---------------------------------------------------------------
  * Where firmware to install comes from: the copy bundled with this app, or the
  * newest release on GitHub. Each release carries the installer and the firmware
- * files together; the firmware keeps its own version, stated in manifest.json.
+ * as one zip, decky-firmware-<version>.zip; the firmware keeps its own version,
+ * stated in the manifest inside.
  *
  * Either way it arrives as a manifest plus images, and nothing is handed to the
  * flasher until every image matches the manifest's SHA-256 and the manifest
@@ -10,8 +11,9 @@
  *--------------------------------------------------------------*/
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { unzipSync } from "fflate";
 import { validateManifest, type FirmwareManifest } from "../../shared/firmware";
 
 export interface FirmwarePackage {
@@ -24,8 +26,10 @@ export interface FirmwareRelease {
     version: string;
     protocol: number;
     tag: string;
-    /** Download URL of each release asset, by file name. */
-    assets: Map<string, string>;
+    /** Download URL of the zip the firmware came from. */
+    source: string;
+    /** The firmware itself, every image already checked against its manifest. */
+    firmware: FirmwarePackage;
 }
 
 /** A newer Decky, as the newest release that carries a Windows installer. */
@@ -47,6 +51,9 @@ interface GitHubRelease {
     assets?: { name?: string; browser_download_url?: string; size?: number }[];
 }
 
+/** The firmware package's file on a release, e.g. decky-firmware-0.1.1.zip. */
+const FIRMWARE_ZIP = /^decky-firmware-[\w.+-]+\.zip$/;
+/** Larger than the whole 4 MB flash, so bigger than any real image or package. */
 const MAX_ASSET_BYTES = 4 * 1024 * 1024;
 const APP_TAG = /^v(\d+\.\d+\.\d+)$/;
 const INSTALLER = /^Decky-Setup-[\w.+-]+\.exe$/;
@@ -131,37 +138,63 @@ function published(releases: GitHubRelease[]): (GitHubRelease & { tag_name: stri
 }
 
 /**
+ * Open a firmware zip: the manifest and the images it lists.
+ *
+ * Every entry's unpacked size is checked before anything is inflated, so a zip
+ * that would expand into something huge is refused rather than unpacked.
+ */
+function unpack(zip: Uint8Array): FirmwarePackage {
+    const files = unzipSync(zip, {
+        filter: (file) => {
+            if (file.originalSize > MAX_ASSET_BYTES)
+                throw new Error("The firmware zip holds a file too large to be firmware.");
+            return true;
+        },
+    });
+    const manifestBytes = files["manifest.json"];
+    if (!manifestBytes) throw new Error("The firmware zip has no manifest.json.");
+    const manifest = validateManifest(JSON.parse(Buffer.from(manifestBytes).toString("utf8")));
+    const images = new Map<string, Uint8Array>();
+    for (const part of manifest.parts) {
+        const data = files[part.file];
+        if (!data) throw new Error(`The firmware zip has no ${part.file}.`);
+        images.set(part.file, data);
+    }
+    return checked(manifest, images);
+}
+
+/**
  * The firmware in the newest published release, or null when there is none.
  *
  * Releases are numbered for the app; the firmware inside only changes version
  * when its own code changed, so its version is read from the manifest. The
  * newest release always holds the newest firmware, because a release is built
- * from everything on main at that point.
+ * from everything on main at that point. `known` is the result of the last
+ * look: while the newest release is unchanged, nothing is downloaded again.
  */
-async function firmwareIn(releases: GitHubRelease[]): Promise<FirmwareRelease | null> {
-    let newest: Omit<FirmwareRelease, "version" | "protocol"> | null = null;
+async function firmwareIn(
+    releases: GitHubRelease[],
+    known?: FirmwareRelease | null,
+): Promise<FirmwareRelease | null> {
     for (const release of published(releases)) {
-        const assets = new Map<string, string>();
-        for (const asset of release.assets ?? [])
-            if (asset.name && asset.browser_download_url && (asset.size ?? 0) <= MAX_ASSET_BYTES)
-                assets.set(asset.name, asset.browser_download_url);
-        if (assets.has("manifest.json")) {
-            newest = { tag: release.tag_name, assets };
-            break;
-        }
+        const asset = release.assets?.find((item) => FIRMWARE_ZIP.test(item.name ?? ""));
+        if (!asset?.browser_download_url || (asset.size ?? 0) > MAX_ASSET_BYTES) continue;
+        if (known?.source === asset.browser_download_url) return known;
+        const zip = new Uint8Array(
+            await (
+                await fetchChecked(asset.browser_download_url, "application/octet-stream")
+            ).arrayBuffer(),
+        );
+        const firmware = unpack(zip);
+        return {
+            version: firmware.manifest.version,
+            protocol: firmware.manifest.protocol,
+            tag: release.tag_name,
+            source: asset.browser_download_url,
+            firmware,
+        };
     }
-    if (!newest) return null;
-    const manifest = validateManifest(
-        await (
-            await fetchChecked(newest.assets.get("manifest.json")!, "application/octet-stream")
-        ).json(),
-    );
-    return {
-        tag: newest.tag,
-        assets: newest.assets,
-        version: manifest.version,
-        protocol: manifest.protocol,
-    };
+    return null;
 }
 
 /** The newest published Decky with a Windows installer, or null when there is none. */
@@ -185,57 +218,18 @@ function appIn(releases: GitHubRelease[], repository: string): AppRelease | null
 }
 
 /** The newest firmware in a published release. */
-export async function latestRelease(repository: string): Promise<FirmwareRelease | null> {
-    return firmwareIn(await fetchReleases(repository));
+export async function latestRelease(
+    repository: string,
+    known?: FirmwareRelease | null,
+): Promise<FirmwareRelease | null> {
+    return firmwareIn(await fetchReleases(repository), known);
 }
 
 /** The newest firmware and the newest Decky, from one look at the release list. */
 export async function latestReleases(
     repository: string,
+    known?: FirmwareRelease | null,
 ): Promise<{ firmware: FirmwareRelease | null; app: AppRelease | null }> {
     const releases = await fetchReleases(repository);
-    return { firmware: await firmwareIn(releases), app: appIn(releases, repository) };
-}
-
-/**
- * Download a release's images, verify them, and keep them for next time.
- *
- * Cached per version under `cacheFolder`, so a deck can be updated again - or a
- * second deck set up - without downloading anything.
- */
-export async function downloadRelease(
-    release: FirmwareRelease,
-    cacheFolder: string,
-): Promise<FirmwarePackage> {
-    const folder = join(cacheFolder, release.version);
-    try {
-        return await loadPackage(folder);
-    } catch {
-        // Not cached yet, or a partial download: fetch it fresh.
-    }
-    const manifestBytes = new Uint8Array(
-        await (
-            await fetchChecked(release.assets.get("manifest.json")!, "application/octet-stream")
-        ).arrayBuffer(),
-    );
-    const manifest = validateManifest(JSON.parse(Buffer.from(manifestBytes).toString("utf8")));
-    if (manifest.version !== release.version)
-        throw new Error("The release's manifest describes a different version.");
-    const images = new Map<string, Uint8Array>();
-    for (const part of manifest.parts) {
-        const url = release.assets.get(part.file);
-        if (!url) throw new Error(`The release has no ${part.file}.`);
-        images.set(
-            part.file,
-            new Uint8Array(
-                await (await fetchChecked(url, "application/octet-stream")).arrayBuffer(),
-            ),
-        );
-    }
-    const verified = checked(manifest, images);
-    await mkdir(folder, { recursive: true });
-    for (const [file, data] of images) await writeFile(join(folder, file), data);
-    // Last, so a cached folder with a manifest is always complete.
-    await writeFile(join(folder, "manifest.json"), manifestBytes);
-    return verified;
+    return { firmware: await firmwareIn(releases, known), app: appIn(releases, repository) };
 }

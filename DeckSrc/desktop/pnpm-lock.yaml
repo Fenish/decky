@@ -14,6 +14,9 @@ importers:
       esptool-js:
         specifier: 0.6.1
         version: 0.6.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       serialport:
         specifier: ^12.0.0
         version: 12.0.0

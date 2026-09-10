@@ -42,6 +42,8 @@ export async function installAppUpdate(
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.logger = null;
+    // Releases carry no blockmap, to keep their file list short: always the whole installer.
+    autoUpdater.disableDifferentialDownload = true;
     const token = new CancellationToken();
     download = token;
     cancelled = false;

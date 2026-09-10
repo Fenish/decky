@@ -109,14 +109,14 @@ jobs:
           pnpm run build
           pnpm exec electron-builder --win nsis --publish never
 
-      # latest.yml and the blockmap are what an installed Decky's updater reads:
-      # the version, the installer's SHA-512, and the blocks for partial downloads.
+      # latest.yml is what an installed Decky's updater reads: the version and the
+      # installer's SHA-512. The blockmap is left out to keep the release short;
+      # updates then download the whole installer.
       - uses: actions/upload-artifact@v6
         with:
           name: installer
           path: |
             DeckSrc/desktop/dist/*.exe
-            DeckSrc/desktop/dist/*.exe.blockmap
             DeckSrc/desktop/dist/latest.yml
           if-no-files-found: error
 
@@ -129,14 +129,19 @@ jobs:
           path: assets
           merge-multiple: true
 
+      # Three files on the release page: the installer, latest.yml for the updater,
+      # and the firmware - its manifest and images - as one zip the app unpacks.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.plan.outputs.version }}
+          FIRMWARE: ${{ needs.plan.outputs.firmware_version }}
           NOTES: ${{ needs.plan.outputs.notes }}
         run: |
+          (cd assets && zip -j -q "../decky-firmware-$FIRMWARE.zip" manifest.json *.bin)
           printf '%s\n' "$NOTES" > notes.md
-          gh release create "v$VERSION" assets/* \
+          gh release create "v$VERSION" assets/Decky-Setup-*.exe assets/latest.yml \
+            "decky-firmware-$FIRMWARE.zip" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Decky $VERSION" \

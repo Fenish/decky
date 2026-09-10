@@ -1,15 +1,8 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isNewerFirmware, validateManifest } from "../src/shared/firmware";
-import {
-    downloadRelease,
-    latestRelease,
-    latestReleases,
-    repositoryOf,
-} from "../src/main/device/firmware-source";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { strToU8, zipSync } from "fflate";
+import { latestRelease, latestReleases, repositoryOf } from "../src/main/device/firmware-source";
 
 const hash = (data: Uint8Array, algorithm: "sha256" | "md5"): string =>
     createHash(algorithm).update(data).digest("hex");
@@ -101,8 +94,9 @@ describe("firmware packages", () => {
 });
 
 describe("firmware from GitHub releases", () => {
-    // One release per version carries the installer and the firmware files; the
-    // firmware keeps its own version, which only its manifest states.
+    // One release per version: the installer, latest.yml for Decky's updater, and
+    // the firmware as one zip. The firmware keeps its own version, which only the
+    // manifest inside the zip states.
     const firmwareIn: Record<string, string> = {
         "v0.5.0": "1.6.0",
         "v0.4.1-beta": "1.5.0",
@@ -119,55 +113,79 @@ describe("firmware from GitHub releases", () => {
     ].map(({ firmware = true, ...release }) => ({
         ...release,
         html_url: `https://github.com/someone/decky/releases/tag/${release.tag_name}`,
-        assets: [
-            ...(firmware
-                ? [
-                      {
-                          name: `Decky-Setup-${release.tag_name.slice(1)}.exe`,
-                          size: 90_000_000,
-                          browser_download_url: `https://example.test/${release.tag_name}/installer`,
-                      },
-                  ]
-                : []),
-            ...(firmware
-                ? [
-                      "manifest.json",
-                      "bootloader.bin",
-                      "partitions.bin",
-                      "boot_app0.bin",
-                      "firmware.bin",
-                  ].map((name) => ({
-                      name,
-                      size: 1000,
-                      browser_download_url: `https://example.test/${release.tag_name}/${name}`,
-                  }))
-                : []),
-        ],
+        assets: firmware
+            ? [
+                  {
+                      name: `Decky-Setup-${release.tag_name.slice(1)}.exe`,
+                      size: 90_000_000,
+                      browser_download_url: `https://example.test/${release.tag_name}/installer`,
+                  },
+                  {
+                      name: "latest.yml",
+                      size: 400,
+                      browser_download_url: `https://example.test/${release.tag_name}/latest.yml`,
+                  },
+                  {
+                      name: `decky-firmware-${firmwareIn[release.tag_name]}.zip`,
+                      size: 1_000_000,
+                      browser_download_url: `https://example.test/${release.tag_name}/firmware.zip`,
+                  },
+              ]
+            : [],
     }));
-    let folder = "";
-    const serve = (tamper = false) =>
+    let downloads = 0;
+    const zipFor = (version: string, change: "none" | "tamper" | "oversize" = "none") => {
+        const firmware =
+            change === "oversize"
+                ? new Uint8Array(5 * 1024 * 1024)
+                : IMAGES["firmware.bin"].slice();
+        if (change === "tamper") firmware[100] ^= 0xff;
+        return zipSync({
+            "manifest.json": strToU8(JSON.stringify(manifest({ version }))),
+            "bootloader.bin": IMAGES["bootloader.bin"],
+            "partitions.bin": IMAGES["partitions.bin"],
+            "boot_app0.bin": IMAGES["boot_app0.bin"],
+            "firmware.bin": firmware,
+        });
+    };
+    const serve = (change: "none" | "tamper" | "oversize" = "none") => {
+        downloads = 0;
         vi.stubGlobal("fetch", async (url: string) => {
             if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
-            const [, tag, name] = /example\.test\/([^/]+)\/(.+)$/.exec(url)!;
-            const version = firmwareIn[tag!]!;
-            if (name === "manifest.json")
-                return new Response(JSON.stringify(manifest({ version })));
-            const data = IMAGES[name as keyof typeof IMAGES].slice();
-            if (tamper && name === "firmware.bin") data[100] ^= 0xff;
-            return new Response(data);
+            const [, tag] = /example\.test\/([^/]+)\/firmware\.zip$/.exec(url)!;
+            downloads += 1;
+            return new Response(zipFor(firmwareIn[tag!]!, change));
         });
-    afterEach(async () => {
+    };
+    afterEach(() => {
         vi.unstubAllGlobals();
-        if (folder) await rm(folder, { recursive: true, force: true });
-        folder = "";
     });
 
-    it("reads the firmware from the newest published release, skipping drafts, pre-releases and releases without firmware", async () => {
+    it("reads the firmware from the newest published release's zip, skipping drafts, pre-releases and releases without firmware", async () => {
         serve();
         const release = await latestRelease("someone/decky");
         expect(release?.tag).toBe("v0.4.0");
         expect(release?.version).toBe("1.4.0");
         expect(release?.protocol).toBe(7);
+        expect(release?.firmware.images.get("firmware.bin")?.length).toBe(1_144_512);
+    });
+
+    it("downloads the zip once while the newest release stays the same", async () => {
+        serve();
+        const first = await latestRelease("someone/decky");
+        const again = await latestRelease("someone/decky", first);
+        expect(again).toBe(first);
+        expect(downloads).toBe(1);
+    });
+
+    it("refuses a zip whose image was altered", async () => {
+        serve("tamper");
+        await expect(latestRelease("someone/decky")).rejects.toThrow(/does not match/);
+    });
+
+    it("refuses a zip holding a file far larger than any firmware image", async () => {
+        serve("oversize");
+        await expect(latestRelease("someone/decky")).rejects.toThrow(/too large/);
     });
 
     it("finds the newest Decky with an installer from the same release list", async () => {
@@ -180,19 +198,5 @@ describe("firmware from GitHub releases", () => {
             installer: "https://example.test/v0.4.0/installer",
         });
         expect(firmware?.version).toBe("1.4.0");
-    });
-
-    it("downloads and verifies a release, and refuses one whose image was altered", async () => {
-        folder = await mkdtemp(join(tmpdir(), "decky-fw-"));
-        serve();
-        const good = await downloadRelease((await latestRelease("someone/decky"))!, folder);
-        expect(good.images.get("firmware.bin")?.length).toBe(1_144_512);
-
-        await rm(folder, { recursive: true, force: true });
-        folder = await mkdtemp(join(tmpdir(), "decky-fw-"));
-        serve(true);
-        await expect(
-            downloadRelease((await latestRelease("someone/decky"))!, folder),
-        ).rejects.toThrow(/does not match/);
     });
 });

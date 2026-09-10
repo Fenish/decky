@@ -220,7 +220,8 @@ each. **Check GitHub for updates** checks at once.
   installer closes Decky and opens the new version. Keys, pages and pairing live in `%APPDATA%` and
   are kept. If the update fails, Decky keeps running and the screen offers the installer instead. A
   development build cannot replace itself and offers the download instead. `src/main/app-update.ts`
-  holds the flow; the release carries `latest.yml` and the installer's blockmap for it.
+  holds the flow; the release carries `latest.yml` for it. Releases have no blockmap, to keep their file list to
+  the installer, `latest.yml` and the firmware zip, so every update downloads the whole installer.
 - **Firmware:** covered below; it updates from the same section.
 
 ## Firmware
@@ -249,8 +250,9 @@ Decky installs the deck's firmware itself, over USB.
 copies the images and `manifest.json` into `resources/firmware/`, which is gitignored and packed
 into the installer. The manifest lists each image's address, size, SHA-256 and MD5, the firmware
 version and the protocol number; packages that would touch NVS or the data partition are rejected
-before anything is written. Every GitHub release carries the same files next to the Windows
-installer, and the app reads the firmware version from the newest release's manifest. The app checks
+before anything is written. Every GitHub release carries them zipped, as `decky-firmware-<version>.zip`, next to
+the Windows installer; the app downloads the zip when a new release appears, checks every image,
+and reads the firmware version from the manifest inside. The app checks
 the repository named in package.json's `repository` field (`github:Fenish/decky`); the release
 workflow overwrites it with the repository it runs in, so a fork's installer checks the fork. Without
 the field, checking GitHub is unavailable.

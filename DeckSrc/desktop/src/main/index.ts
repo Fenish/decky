@@ -28,7 +28,6 @@ import packageJson from "../../package.json";
 import { flashFirmware, PartitionChangeError, probeDevice } from "./device/flasher";
 import {
     bundledManifest,
-    downloadRelease,
     latestReleases,
     loadPackage,
     repositoryOf,
@@ -87,7 +86,6 @@ const confirmedCrowPanels = new Set<string>();
 // Shipped inside the app: packaged under resources/ by electron-builder, and in
 // development the folder PlatformIO's bundle step writes to.
 const bundledFirmwareFolder = (): string => join(app.getAppPath(), "resources", "firmware");
-const firmwareCache = (): string => join(app.getPath("userData"), "firmware");
 // package.json's standard "repository" field; absent until the project is published.
 const firmwareRepository = (): string | null =>
     repositoryOf((packageJson as { repository?: unknown }).repository);
@@ -144,7 +142,8 @@ function checkForUpdates(): Promise<void> {
     updateCheck ??= (async () => {
         const repository = firmwareRepository();
         if (!repository) throw new Error("No GitHub repository is set for releases.");
-        const found = await latestReleases(repository);
+        // Passing what is already known: an unchanged release is not downloaded again.
+        const found = await latestReleases(repository, latestFirmware);
         latestFirmware = found.firmware;
         latestApp = found.app;
         if (window && !window.isDestroyed()) window.webContents.send("updates:changed");
@@ -177,8 +176,8 @@ async function installFirmware(request: unknown): Promise<FirmwareInstallResult>
     let firmware: FirmwarePackage;
     if (source === "github") {
         if (!latestFirmware) throw new Error("Check GitHub for firmware first.");
-        progress({ stage: "downloading" });
-        firmware = await downloadRelease(latestFirmware, firmwareCache());
+        // Downloaded and checked when GitHub was last asked.
+        firmware = latestFirmware.firmware;
     } else {
         firmware = await loadPackage(bundledFirmwareFolder());
     }
