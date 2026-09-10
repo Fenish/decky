@@ -130,3 +130,14 @@ export function isNewerFirmware(candidate: string, installed: string | undefined
     }
     return false;
 }
+
+/**
+ * A version as people read it: plain numbers, "0.1.1". A local build describes
+ * itself as the release it follows plus git detail ("0.1.1-6-g7074263-dirty");
+ * only the number shows. Anything else, such as "dev", shows as reported.
+ */
+export function formatVersion(version: string | undefined): string {
+    if (!version) return "unknown";
+    const release = /^v?(\d+\.\d+\.\d+)/.exec(version);
+    return release ? release[1]! : version;
+}

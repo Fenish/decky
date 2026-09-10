@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CircleArrowUp, RefreshCw } from "lucide-react";
 import type { FirmwareInfo } from "../../../../shared/api";
-import { InstallProgress, formatVersion } from "../firmware/install-progress";
+import { formatVersion } from "../../../../shared/firmware";
+import { InstallProgress } from "../firmware/install-progress";
 import { useFirmwareInstall } from "../firmware/use-firmware-install";
 
 const clean = (error: unknown): string =>

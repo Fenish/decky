@@ -36,7 +36,7 @@ import {
     type FirmwareRelease,
 } from "./device/firmware-source";
 import { cancelAppUpdate, canInstallUpdates, installAppUpdate } from "./app-update";
-import { isNewerFirmware } from "../shared/firmware";
+import { formatVersion, isNewerFirmware } from "../shared/firmware";
 import type {
     AppUpdateProgress,
     FirmwareInfo,
@@ -213,7 +213,7 @@ async function installFirmware(request: unknown): Promise<FirmwareInstallResult>
     }
     return {
         ok: true,
-        message: `Firmware ${firmware.manifest.version} installed. Decky is restarting.`,
+        message: `Firmware ${formatVersion(firmware.manifest.version)} installed. Decky is restarting.`,
     };
 }
 let deviceReady = false;
