@@ -11,9 +11,6 @@ importers:
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
-      esptool-js:
-        specifier: 0.6.1
-        version: 0.6.1
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -69,6 +66,9 @@ importers:
       eslint-plugin-react-hooks:
         specifier: ^7.1.1
         version: 7.1.1(eslint@9.39.5(jiti@2.7.0))
+      esptool-js:
+        specifier: 0.6.1
+        version: 0.6.1
       lucide-react:
         specifier: ^1.43.0
         version: 1.43.0(react@18.3.1)

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useState } from "react";
-import background from "../../assets/disconnected-obsidian-smooth.png";
+import background from "../../assets/disconnected-obsidian-smooth.webp";
 import "./disconnected-screen.css";
 import type { UnknownDevice } from "../../../../shared/api";
 import { FirstInstall } from "../firmware/first-install";

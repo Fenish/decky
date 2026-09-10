@@ -27,6 +27,7 @@ try {
                         ".css": "text/css",
                         ".html": "text/html",
                         ".png": "image/png",
+                        ".webp": "image/webp",
                         ".obj": "text/plain",
                     }[extname(path)] ?? "application/octet-stream",
             });
@@ -357,7 +358,7 @@ try {
     await page.getByLabel("State title", { exact: true }).fill("Mic on");
     await page
         .locator("input[type=file]")
-        .setInputFiles("src/renderer/src/assets/disconnected-obsidian-smooth.png");
+        .setInputFiles("src/renderer/src/assets/decky-studio-fallback.png");
     await page.getByRole("button", { name: "Remove image", exact: true }).waitFor();
     await page.getByRole("slider", { name: "Zoom", exact: true }).press("End");
     await page.getByRole("slider", { name: "Rotation", exact: true }).press("End");

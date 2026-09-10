@@ -9,10 +9,12 @@ import { resolve } from "node:path";
  */
 export default defineConfig({
     main: {
-        // serialport is a native module and has to stay a real require.
-        // esptool-js is the opposite: it ships browser-style modules with JSON
-        // imports that Node cannot load unbundled, so it is bundled into main.
-        plugins: [externalizeDepsPlugin({ exclude: ["esptool-js"] })],
+        // Packages in "dependencies" stay real requires and ship in node_modules:
+        // serialport is a native module and has to. esptool-js is the opposite -
+        // it ships browser-style modules with JSON imports that Node cannot load
+        // unbundled - so it is a devDependency, bundled into main and left out
+        // of the installer.
+        plugins: [externalizeDepsPlugin()],
     },
     preload: {
         plugins: [externalizeDepsPlugin()],

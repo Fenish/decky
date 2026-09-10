@@ -14,7 +14,7 @@ import {
 import type { DeckConfig, DeckPage, KeyConfig, KeyStates } from "../../../../shared/config";
 import { BACK_CELL, displayedKey, keyAddress } from "../../../../shared/config";
 import { hotkeysInUse } from "../../../../shared/hotkey-pool";
-import background from "../../assets/dashboard-obsidian.png";
+import background from "../../assets/dashboard-obsidian.webp";
 import { Dialog } from "../../components/dialog";
 import { ArtworkPreview } from "../artwork/artwork-preview";
 import { KeyEditor } from "../editor/key-editor";
