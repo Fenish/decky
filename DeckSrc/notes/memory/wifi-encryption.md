@@ -8,7 +8,7 @@ AES-128-GCM framed: `[u16 length][ciphertext][16-byte tag]`, a key per direction
 from HMAC-SHA256(pairing secret, "decky c2s " / "decky s2c " + challenge), and a
 per-direction frame counter as the nonce. The deck's challenge ends with
 `aesgcm1`; the desktop refuses Wi-Fi to firmware without it. The framing exists
-twice - `firmware/src/secure_link.cpp` and
+twice - `firmware/src/security/secure_link.cpp` and
 `desktop/src/main/device/secure-channel.ts` - and the two must match byte for
 byte. USB is not framed.
 

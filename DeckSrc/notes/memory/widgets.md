@@ -29,7 +29,7 @@ deck receives pictures, and looks for the keys it turns itself.
   - **New versions:** a version built from a copy carries its live pictures and
     sliding text (`live=<mask>` in the `CACHE` reply). Only keys whose own
     picture changed go, as `PATCH`.
-  - **Tracking:** `livePatched` in `main/index.ts` (page id, then signature)
+  - **Tracking:** `livePatched` in `main/widgets/live-keys.ts` (page id, then signature)
     mirrors what each copy shows.
   - **Widgets moved or removed:** such keys get their live picture dropped
     (`LIVE … 0 0 0`), or a moved clock leaves its time behind
@@ -56,7 +56,7 @@ deck receives pictures, and looks for the keys it turns itself.
 - **Live frames are coalesced per key** (`liveQueue`): a waiting send takes the
   newest picture, so a fast swipe skips steps instead of queueing USB patches.
 - **An adjustable countdown at rest is turned by the deck itself**
-  (`firmware/src/wheel.cpp`, `wheel=1`).
+  (`firmware/src/keys/`, `wheel=1`).
   - **The look:** the app sends it once (`WHEEL`, `src/shared/wheel-spec.ts`):
     backdrop, the digits rasterised in the app's font, labels, and drum and
     physics settings. The deck keeps four looks by CRC, and `WHEELAT` re-arms
@@ -94,7 +94,7 @@ deck receives pictures, and looks for the keys it turns itself.
   (`shared/slide-spec.ts`; drawn by `features/widgets/slide.ts`). The deck
   slides it over the picture, so `LIVE` pictures change under it.
   - **Lifetime:** it belongs to the deck's copy of the page. `liveSlides` in
-    `main/index.ts` mirrors `livePatched`: a new version starts with none,
+    `main/widgets/live-keys.ts` mirrors `livePatched`: a new version starts with none,
     `HELLO` and disconnect drop everything.
   - **Sending:** the picture goes first, then the text, and only when its CRC
     differs. The strip must render the same every time: the media key redraws
@@ -121,7 +121,7 @@ deck receives pictures, and looks for the keys it turns itself.
   - **Prices are live:** Binance's public stream
     (`wss://data-stream.binance.vision`, no key) for all coins on one socket,
     klines hourly for the chart, REST then CoinGecko for a coin the stream is
-    quiet about (`main/crypto-feed.ts`). US dollars only (USDT).
+    quiet about (`main/widgets/crypto-feed.ts`). US dollars only (USDT).
 - **Retired settings are dropped on load** (`retireWidgets` in
   `shared/config.ts`): the network widget, crypto currency and interval, the
   microphone's style. Without it an old profile fails validation and the whole
@@ -132,13 +132,26 @@ deck receives pictures, and looks for the keys it turns itself.
 **Why:** a 29 KB key cannot be resent every second over USB; patches take 20-95
 ms, and uploads are bounded by [[usb-upload-blocks]].
 
-**How to apply:** a new widget type needs no firmware change. It needs
-`shared/widgets.ts` (type, validation, `nextChange`), `draw-widget.ts`,
-`widget-settings.tsx`, `samples.ts` (the made-up readings its style tiles show)
-and `pressWidget` or `useWidget`. Anything it reads goes in `WidgetFeeds` - as
-events where the source can tell of its changes - and anything a person sets
-that must survive a restart goes in `KEPT_STATE`. Keep its base picture
-time-free. Anything that must animate or follow a finger goes on the deck
-instead ([[deck-first-for-animation]]). Text that can outgrow its key goes to
+**How to apply:** a new widget type needs no firmware change. It needs its kind,
+its view, its action if it has one, and one registry line in each; a type
+missing from a registry does not compile.
+
+- **Kind** (`shared/widgets/<type>.ts`, `WidgetKind`): its settings type,
+  defaults, validation, `nextChange`, and `press`/`swipe` if those change its
+  state. Its type also joins the `Widget` union in `shared/widgets.ts`.
+- **View** (`renderer/src/features/widgets/kinds/<type>/`, `WidgetView`): its
+  drawing, its settings fields, `sample` (the made-up readings its style tiles
+  show), and a `deckLook` if the deck turns it.
+- **Action** (`main/widgets/actions/`, `WidgetAction`): only if a press does
+  something beyond its own state - mute, play, roll.
+- **Registries:** `shared/widgets/registry.ts`,
+  `renderer/src/features/widgets/kinds/registry.ts`,
+  `main/widgets/actions/registry.ts`.
+
+Anything it reads goes in `WidgetFeeds` (a line in `sync`'s `reads`) - as events
+where the source can tell of its changes - and anything a person sets that must
+survive a restart goes in `KEPT_STATE`. Keep its base picture time-free.
+Anything that must animate or follow a finger goes on the deck instead
+([[deck-first-for-animation]]). Text that can outgrow its key goes to
 `moment.slides` through `slideLine` rather than being cut with `clip`. Removing
-a setting needs a line in `retireWidgets`.
+a setting needs its kind's `retire`.

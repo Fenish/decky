@@ -13,8 +13,11 @@ The touch test of 2026-09-09 is long gone.
 Structure: `lib/panel` owns the RGB bus, timing, backlight, frame buffers, beam
 timing **and the GT911** - the only place that knows GPIO numbers. `lib/keygrid`
 owns the layout, the millimetre-to-pixel conversion and `hit()`, which turns a
-touch point back into a key index. `src/main.cpp` holds the protocol and page
-cache, `src/wheel.cpp` the wheels, dials and dice.
+touch point back into a key index. Since 2026-09-11 `src/` is in folders by
+area, one class or two each, all owned by a `Deck` (`src/deck/deck.h`); the
+firmware README's Layout section maps them. A restructure is checked on the deck
+by a golden run: every command in a fixed order, replies and screen captures
+compared with the build before (see [[firmware-golden-run]]).
 
 **Touch is the input.** Reversed 2026-09-09; the earlier "permanently out of
 scope" is gone. See [[touch-input]] and

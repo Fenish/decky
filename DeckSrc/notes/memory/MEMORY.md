@@ -78,3 +78,5 @@ project context.
   BLOCK, thanks to the 8 KB receive buffer; test tools must honour READY's size
 - [deck-restart-diagnosis](deck-restart-diagnosis.md) — why the deck restarted:
   `reset=`, deck.log, the core dump (empty means power), error 31 means replug
+- [firmware-golden-run](firmware-golden-run.md) — prove a firmware change keeps
+  behaviour: tools/golden_run.py record, flash, check (replies + screens)

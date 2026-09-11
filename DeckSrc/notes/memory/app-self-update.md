@@ -9,7 +9,7 @@ silently; the installer relaunches Decky. The title bar's pill counts app and
 firmware updates from the app's own GitHub check (15-minute interval) and opens
 Settings → Updates; the update screen is
 `features/updates/app-update-screen.tsx`, driven by `app-update:progress` events
-from `src/main/app-update.ts`.
+from `src/main/updates/app-update.ts`.
 
 - A release must carry `Decky-Setup-<v>.exe`, its `.blockmap` and `latest.yml`.
   The installer name is fixed by `build.nsis.artifactName`.
