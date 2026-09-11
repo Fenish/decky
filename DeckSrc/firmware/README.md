@@ -50,11 +50,50 @@ Never install it over a working deck: it runs through NVS and erases the Wi-Fi
 settings and pairing. Key artwork is stored on the microSD card
 (`/decky-cache/`), which flashing never touches.
 
+## Reading a crash
+
+A crash (`reset=panic` in `ID`) writes a core dump to the last 64 KB of flash
+(`0x3F0000`), and it outlives a power cycle. Read it, then decode it against the
+`firmware.elf` of the build that crashed. Any other build names the wrong lines,
+so keep the ELF of whatever you flash:
+
+```sh
+pip install esp-coredump
+python -m esptool --chip esp32s3 --port COM5 --baud 460800 read-flash 0x3F0000 0x10000 coredump.bin
+python -m esp_coredump --chip esp32s3 info_corefile --core coredump.bin --core-format raw \
+  --gdb ~/.platformio/packages/tool-xtensa-esp-elf-gdb/bin/xtensa-esp-elf-gdb-no-python.exe \
+  .pio/build/esp32-s3-devkitc-1-myboard/firmware.elf
+```
+
+A partition that reads back as all `FF` means the last restart was not a crash:
+a brownout or a power dip leaves nothing. A dump stays until the next crash
+overwrites it, so erase it once read (`erase-region 0x3F0000 0x10000`).
+Otherwise a later restart can be blamed on an old crash.
+
 ## Versions and protocol
 
 - `include/decky_version.h` holds `DECKY_PROTOCOL`, the one number the desktop
   and firmware must agree on. Raise it when the desktop has to change with the
   firmware. The deck reports it in `ID` and `BOOT`.
+- A command that an older desktop can do without is announced as a flag in the
+  `ID` reply instead: `live=1` means the deck accepts `LIVE` patches for widget
+  keys, `drag=1` that it reports finger movement (`EV <page> <cell> MOVE <y>`)
+  on the keys the desktop names with `DRAG`, `wheel=1` that it draws and turns
+  picker wheels itself (`WHEEL`, `WHEELAT`, `EV <page> <cell> WHEEL <label>`),
+  `dial=1` that it also turns dials (version 2 looks,
+  `EV <page> <cell> VALUE <value>`), rolls drums to a label (`WHEELROLL`) and
+  throws dice (version 3 looks), `warm=1` that while loading it takes every
+  page's widget pictures (`LIVE` for pages not shown) and looks sent ahead
+  (`WHEEL` with cell -1), counted in its progress, and `block=4096` that it
+  takes uploads over USB in blocks of up to 4096 bytes once asked with
+  `BLOCK <n>` (back to 128 on `HELLO` and when the desktop goes), and `slide=1`
+  that it slides text too long for a key along by itself (`SLIDE`). `reset=`
+  names why the deck last started (`esp_reset_reason()`: `poweron`, `ext`, `sw`,
+  `panic`, `intwdt`, `taskwdt`, `wdt`, `brownout`, `usb`, `jtag`). Desktops that
+  don't know a flag ignore it, and a desktop facing firmware without it leaves
+  widgets as their still pictures, so neither side has to be updated first.
+  Movement goes only to keys a desktop named: an older desktop takes any line it
+  doesn't know for the reply to the command it is waiting on.
 - `scripts/firmware_version.py` stamps `DECKY_FW_VERSION`: the
   `DECKY_FW_VERSION` environment variable, else `git describe` against the
   newest `firmware-v*` tag, else `dev`. It appears as `fw=` in the `ID` reply.
@@ -82,7 +121,45 @@ frame. Its byte format must match the desktop's
   The only code that knows GPIO numbers.
 - `lib/keygrid` - key layout in millimetres, conversion to pixels, touch
   hit-testing.
-- `src/main.cpp` - the serial protocol, page cache and key drawing.
+- `src/main.cpp` - the serial protocol, page cache and key drawing. Serial keeps
+  8 KB of what arrives and passes bytes on from the UART once 32 are in (not
+  120): with that, uploads can go in 2 KB blocks, and a 24 KB look takes 0.8 s
+  rather than 1.7 s. A page copy keeps its own pictures exactly as sent, and
+  widget keys' live pictures (`LIVE`) apart from them, so its own pictures
+  always match its signature and the card's copy. A new version of a page
+  carries the live pictures over, and needs only its changed keys, which come as
+  patches (`PATCH`). Live pictures always leave the memory floor and a whole
+  page's worth in one piece free. Without room for one, `LIVE` is refused rather
+  than drawn into the page's own pictures. Slots keep their buffers once they
+  have one, so memory never breaks into pieces too small for a page.
+- `src/wheel.cpp` - picker wheels the deck turns itself: the looks the desktop
+  sends (kept by CRC), the drum they are drawn on, following the finger, the
+  coast after a flick and the spring onto a label, or a roll to a label the
+  desktop picked (a coin, yes or no, a list). Dials too (the volume): each pixel
+  is the key at its lowest or its highest, by a per-pixel map against the value
+  the finger sets, with the number drawn on top. And dice: a cube drawn in 3D (a
+  small rasteriser: each face a parallelogram walked row by row, lit by how it
+  faces the light, rounded and darker at its edges, its pips as small ellipses,
+  a soft shadow under it), thrown by `WHEELROLL` - tumbling through the air,
+  hopping, bouncing off the key's edges, rolling the way it goes, then lying
+  flat where it stops; `EV WHEEL` says how it lies. The throw is fair: where its
+  tumble ends is a random unit quaternion, reached exactly (by time, not
+  integrated), and on the table the spin comes from the roll, so the cube's
+  symmetry keeps every face as likely. Composing a drum's frame takes about 4.3
+  ms and a die's about 5 ms; both run at the panel's refresh (it is about 54
+  Hz), between transfer blocks too. The file is built with `-O2` and fast-math:
+  with the defaults a die's frame took 10-15 ms. Animated keys belong here
+  rather than in the desktop, whose pictures take 20-130 ms each over USB.
+- `src/slide.cpp` - text too long for its key (a song's title), slid along by
+  the deck: up to two lines, each as coverage the desktop drew in its font, laid
+  in one colour over the key's picture inside its window. It rests, slides, and
+  its start comes round after a gap; the edges fade. Only the rows the text
+  covers are written, each time it has moved a pixel, when the beam is clear of
+  them. The text hangs off the page copy it was sent for (`texts` in
+  `CachedPage`) and goes with it, so `LIVE` pictures change under it and a new
+  version of the page starts without it.
+- `src/live_patch.cpp` - decoding `LIVE` patches, for widget pictures and a
+  wheel's backdrop.
 - `src/wireless.cpp`, `src/secure_link.cpp` - Wi-Fi, discovery, pairing,
   encryption.
 - `src/artwork_store.cpp` - artwork persisted on a microSD card.
