@@ -6,23 +6,40 @@ import { access } from "node:fs/promises";
 import { shell } from "electron";
 import { setTimeout as delay } from "node:timers/promises";
 import { HotkeySender } from "./hotkeys";
-import { validWebsite } from "../../shared/config";
-import type { Action, Step } from "../../shared/config";
+import { isStep, validWebsite } from "../../shared/config";
+import type { Action, DeckConfig, Step } from "../../shared/config";
 import type { Reply } from "../../shared/api";
 export class ActionRunner {
     private keyboard = new HotkeySender();
     private controllers = new Set<AbortController>();
+    /** Stop the actions running; the keystroke helper stays ready. */
     cancel(): void {
         for (const controller of this.controllers) controller.abort();
+    }
+    /** Quitting: stop the actions running, and the keystroke helper. */
+    stop(): void {
+        this.cancel();
         this.keyboard.stop();
+    }
+    /**
+     * Ready for the profile's keys before the first press: where any key
+     * sends a hotkey, the keystroke helper starts now rather than on that
+     * press (about half a second).
+     */
+    prepare(config: DeckConfig): void {
+        const steps = config.pages
+            .flatMap((page) => Object.values(page.keys))
+            .flatMap(({ action }) => (action.kind === "macro" ? action.steps : [action]));
+        if (steps.some((step) => step.kind === "hotkey")) this.keyboard.start();
     }
     async run(action: Action): Promise<Reply> {
         const controller = new AbortController();
         this.controllers.add(controller);
         try {
-            if (action.kind === "page") throw new Error("Page actions are handled by navigation.");
-            if (action.kind === "widget") throw new Error("Widgets handle their own presses.");
-            for (const step of action.kind === "macro" ? action.steps : [action]) {
+            // Pages, widgets and app controls are the workspace's to handle.
+            const steps = action.kind === "macro" ? action.steps : isStep(action) ? [action] : null;
+            if (!steps) throw new Error("This key is not run by the action runner.");
+            for (const step of steps) {
                 controller.signal.throwIfAborted();
                 await this.step(step, controller.signal);
             }

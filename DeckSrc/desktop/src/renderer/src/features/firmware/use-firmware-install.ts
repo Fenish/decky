@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FirmwareInstallRequest, FirmwareProgress } from "../../../../shared/api";
+import { errorText } from "../../app/error-text";
 
 export type InstallState =
     | { phase: "idle" }
@@ -35,11 +36,6 @@ export function describeProgress(progress: FirmwareProgress | null): ProgressLin
     const describe = STAGES[progress.stage] as (progress: FirmwareProgress) => ProgressLine;
     return describe(progress);
 }
-
-const clean = (error: unknown): string =>
-    String(error)
-        .replace(/^Error: /, "")
-        .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 
 /**
  * Run one firmware install and follow its progress.
@@ -81,7 +77,7 @@ export function useFirmwareInstall(): {
                 );
             return result.ok;
         } catch (error) {
-            if (mounted.current) setState({ phase: "failed", message: clean(error) });
+            if (mounted.current) setState({ phase: "failed", message: errorText(error) });
             return false;
         }
     }, []);

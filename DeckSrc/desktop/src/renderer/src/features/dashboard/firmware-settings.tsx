@@ -4,11 +4,7 @@ import type { FirmwareInfo } from "../../../../shared/api";
 import { formatVersion } from "../../../../shared/firmware";
 import { InstallProgress } from "../firmware/install-progress";
 import { useFirmwareInstall } from "../firmware/use-firmware-install";
-
-const clean = (error: unknown): string =>
-    String(error)
-        .replace(/^Error: /, "")
-        .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+import { errorText } from "../../app/error-text";
 
 /** Settings section: the versions running, and updating Decky and the deck's firmware. */
 export function FirmwareSettings() {
@@ -25,7 +21,7 @@ export function FirmwareSettings() {
                 .then((next) => {
                     if (live) setInfo(next);
                 })
-                .catch((error) => live && setNote(clean(error)));
+                .catch((error) => live && setNote(errorText(error)));
         };
         load();
         // The background check can find a release while Settings is open.
@@ -47,7 +43,7 @@ export function FirmwareSettings() {
             else if (!next.update && !next.appUpdate)
                 setNote("Decky and the deck's firmware are up to date.");
         } catch (error) {
-            setNote(clean(error));
+            setNote(errorText(error));
         } finally {
             setChecking(false);
         }
@@ -57,7 +53,7 @@ export function FirmwareSettings() {
         void window.deck
             .appUpdateDownload()
             .then((reply) => setNote(reply.message))
-            .catch((error) => setNote(clean(error)));
+            .catch((error) => setNote(errorText(error)));
     };
 
     const installed = info?.installed;

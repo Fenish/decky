@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LockKeyhole, RefreshCw, Wifi } from "lucide-react";
 import type { WifiNetwork, WifiStatus } from "../../../../shared/api";
+import { errorText } from "../../app/error-text";
 
 export function WifiSettings() {
     const [status, setStatus] = useState<WifiStatus | null>(null);
@@ -15,10 +16,6 @@ export function WifiSettings() {
     const connecting = useRef(false);
     const joinStarted = useRef(0);
     const joiningSsid = useRef("");
-    const cleanError = (error: unknown): string =>
-        String(error)
-            .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "")
-            .replace(/^Error: /, "");
     const refresh = async (): Promise<void> => {
         const next = await window.deck.wifiStatus();
         if (!mounted.current) return;
@@ -50,7 +47,7 @@ export function WifiSettings() {
             try {
                 await refresh();
             } catch (error) {
-                if (mounted.current) setMessage(cleanError(error));
+                if (mounted.current) setMessage(errorText(error));
             }
             if (live) timer = setTimeout(() => void poll(), 2000);
         };
@@ -71,7 +68,7 @@ export function WifiSettings() {
                 setScanned(true);
             }
         } catch (error) {
-            if (mounted.current) setMessage(cleanError(error));
+            if (mounted.current) setMessage(errorText(error));
         } finally {
             if (mounted.current) setBusy("");
         }
@@ -99,7 +96,7 @@ export function WifiSettings() {
         } catch (error) {
             if (mounted.current) {
                 setBusy("");
-                setMessage(cleanError(error));
+                setMessage(errorText(error));
             }
         }
     };
@@ -117,7 +114,7 @@ export function WifiSettings() {
             }
             await refresh();
         } catch (error) {
-            if (mounted.current) setMessage(cleanError(error));
+            if (mounted.current) setMessage(errorText(error));
         } finally {
             if (mounted.current) setBusy("");
         }

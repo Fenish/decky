@@ -4,13 +4,9 @@ import type { DeviceCheck, UnknownDevice } from "../../../../shared/api";
 import { InstallProgress } from "./install-progress";
 import { useFirmwareInstall } from "./use-firmware-install";
 import "./firmware.css";
+import { errorText } from "../../app/error-text";
 
 type Step = "offer" | "checking" | "other";
-
-const clean = (error: unknown): string =>
-    String(error)
-        .replace(/^Error: /, "")
-        .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
 
 /**
  * Set up a deck that does not run Decky yet.
@@ -55,7 +51,7 @@ export function FirstInstall({ device }: { device: UnknownDevice }) {
                 "This copy of Decky has no firmware to install. Build the firmware, or connect to the internet.",
             );
         } catch (error) {
-            setMessage(clean(error));
+            setMessage(errorText(error));
         }
         setStep("offer");
     };

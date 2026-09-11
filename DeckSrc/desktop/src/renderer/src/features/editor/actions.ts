@@ -1,5 +1,7 @@
 import type { Action, Step } from "../../../../shared/config";
 import { nextFreeHotkey } from "../../../../shared/hotkey-pool";
+import { controlNamed } from "../../../../shared/integrations/registry";
+import { INTEGRATIONS } from "../../../../shared/integrations/registry";
 import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 /** What the editor knows of one kind of action. */
 export interface ActionKind<A extends Action> {
@@ -101,6 +103,16 @@ export const ACTION_KINDS: { [K in Action["kind"]]: ActionKind<Extract<Action, {
         summary: (action) =>
             WIDGET_CHOICES.find((choice) => choice.type === action.widget.type)!.label,
     },
+    app: {
+        label: "App control",
+        title: "App control",
+        // Picked on an app's page, as one of its controls; the picker's Apps entry has this icon.
+        icon: "Blocks",
+        toggles: true,
+        fresh: () => ({ kind: "app", app: "discord", control: "mute" }),
+        summary: (action) =>
+            `${INTEGRATIONS[action.app].name}: ${controlNamed(action.app, action.control)?.label ?? action.control}`,
+    },
 };
 /**
  * A fresh step of one kind.
@@ -117,4 +129,11 @@ export function defaultAction(kind: Action["kind"], pageId = "home", taken: stri
 export function actionSummary(action: Action): string {
     const summary = ACTION_KINDS[action.kind].summary as (action: Action) => string;
     return summary(action);
+}
+const PLAIN_STATES = { off: "OFF", on: "ON" };
+/** What a toggle key's two states are called: an app control's own words (Muted), else OFF and ON. */
+export function stateNames(action: Action): { off: string; on: string } {
+    return (
+        (action.kind === "app" && controlNamed(action.app, action.control)?.states) || PLAIN_STATES
+    );
 }

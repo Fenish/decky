@@ -1,3 +1,5 @@
+import type { IntegrationId } from "./integrations/integration";
+import { controlNamed } from "./integrations/registry";
 import { validProgramTarget } from "./programs";
 import type { Widget } from "./widgets";
 import { retireWidget, validWidget } from "./widgets/registry";
@@ -19,7 +21,12 @@ export type Action =
     | { kind: "macro"; steps: Step[] }
     | { kind: "page"; pageId: string }
     /** A key whose picture keeps changing; see shared/widgets.ts. */
-    | { kind: "widget"; widget: Widget };
+    | { kind: "widget"; widget: Widget }
+    /**
+     * Something an app Decky talks to can switch (shared/integrations'
+     * `controls`): Discord's mute. As a toggle, its ON follows the app.
+     */
+    | { kind: "app"; app: IntegrationId; control: string };
 export interface Artwork {
     source: string;
     zoom: number;
@@ -34,8 +41,12 @@ export interface KeyAppearance {
     color: string;
     background?: string;
     labelGap?: number;
+    /** The icon's size, in % of its usual (a third of the key): 40 to 200. */
+    iconSize?: number;
     artwork?: Artwork;
 }
+/** How large an icon may be drawn, in % of its usual size. */
+export const ICON_SIZES = { min: 40, max: 200, usual: 100 } as const;
 export interface KeyConfig extends KeyAppearance {
     action: Action;
     behavior?: "normal" | "toggle";
@@ -54,6 +65,7 @@ export function appearanceOf(key: KeyConfig, on = false): KeyAppearance {
         color: source.color,
         background: source.background,
         labelGap: source.labelGap,
+        iconSize: source.iconSize,
         artwork: source.artwork,
     };
 }
@@ -136,7 +148,12 @@ const ACTION_CHECKS: {
         v.steps.every(validStep),
     page: (v, ids) => ids.has(String(v.pageId)),
     widget: (v) => validWidget(v.widget),
+    app: (v) => controlNamed(v.app, v.control) !== undefined,
 };
+/** Whether an action is one step - what a macro holds, and the runner runs. */
+export function isStep(action: Action): action is Step {
+    return Object.hasOwn(STEP_CHECKS, action.kind);
+}
 /** The table's entry for a kind read from outside - a saved profile - if it has one. */
 function checkFor<T>(checks: Record<string, T>, kind: unknown): T | undefined {
     return typeof kind === "string" && Object.hasOwn(checks, kind) ? checks[kind] : undefined;
@@ -144,13 +161,11 @@ function checkFor<T>(checks: Record<string, T>, kind: unknown): T | undefined {
 function validStep(v: unknown): v is Step {
     return record(v) && (checkFor(STEP_CHECKS, v.kind)?.(v) ?? false);
 }
-/** Widgets Decky once had and no longer does. */
-const RETIRED_WIDGETS = new Set(["network"]);
 /**
- * Drop what widgets no longer have, so a profile saved with it still loads:
- * a retired widget's key empties, and other widgets lose the settings their
- * kind no longer has (retire() in shared/widgets/). Changes `value` in place
- * and leaves the rest to validateConfig.
+ * Bring a saved profile's widgets up to date, so it still loads: a widget
+ * Decky no longer has (not in the widget registry) empties its key, and the
+ * others take their kind's retire() (shared/widgets/). Changes `value` in
+ * place and leaves the rest to validateConfig.
  */
 export function retireWidgets(value: unknown): void {
     if (!record(value) || !Array.isArray(value.pages)) return;
@@ -159,8 +174,7 @@ export function retireWidgets(value: unknown): void {
         for (const [cell, key] of Object.entries(page.keys)) {
             const action = record(key) ? key.action : undefined;
             if (!record(action) || action.kind !== "widget" || !record(action.widget)) continue;
-            if (RETIRED_WIDGETS.has(String(action.widget.type))) delete page.keys[cell];
-            else retireWidget(action.widget);
+            if (!retireWidget(action.widget)) delete page.keys[cell];
         }
     }
 }
@@ -259,6 +273,13 @@ export function validateConfig(value: unknown): asserts value is DeckConfig {
                         Number(appearance.labelGap) > 32)
                 )
                     throw new Error("Invalid icon/text spacing.");
+                if (
+                    appearance.iconSize !== undefined &&
+                    (!Number.isInteger(appearance.iconSize) ||
+                        Number(appearance.iconSize) < ICON_SIZES.min ||
+                        Number(appearance.iconSize) > ICON_SIZES.max)
+                )
+                    throw new Error("Invalid icon size.");
                 if (appearance.artwork !== undefined) {
                     const a = appearance.artwork;
                     if (
