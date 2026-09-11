@@ -24,6 +24,13 @@ export const BAUD = 460800;
  */
 const BLOCK = 128;
 
+/**
+ * Lines from the deck that are neither replies nor events: its boot banner,
+ * and what ESP-IDF prints when it panics, resets or browns out.
+ */
+const DECK_NOISE =
+    /^(Decky v\d|Guru Meditation|Backtrace:|Core +\d+ register|PC +:|EXCVADDR|abort\(\)|assert|Brownout|rst:0x|Rebooting|ELF file SHA256|CPU halted|Stack smashing|\*\*\*ERROR\*\*\*|E \(\d+\))/;
+
 /** USB-serial bridges the panel is known to appear behind. */
 const KNOWN_VENDOR_IDS = new Set(["1a86", "10c4", "0403", "303a"]);
 
@@ -127,20 +134,34 @@ export function parseIdentity(line: string, path: string): DeckIdentity | null {
         pages,
         cacheSlots: fields.get("cache") ?? 8,
         persistentCache: fields.get("storage") === 1,
+        live: fields.get("live") === 1,
+        drag: fields.get("drag") === 1,
+        wheel: fields.get("wheel") === 1,
+        dial: fields.get("dial") === 1,
+        warm: fields.get("warm") === 1,
+        block: fields.get("block"),
+        slide: fields.get("slide") === 1,
         // Reported from protocol 7 on; older firmware has no version to show.
         firmwareVersion: parts
             .slice(5)
             .find((part) => /^fw=[\w.+-]{1,48}$/.test(part))
             ?.slice(3),
+        resetReason: parts
+            .slice(5)
+            .find((part) => /^reset=[a-z]{1,16}$/.test(part))
+            ?.slice(6),
     };
 }
 
 /**
  * Read an unsolicited line from the deck.
  *
- * `EV <page> <cell> DOWN|UP` for a press, `PAGE <n>` when the deck navigates.
- * Returns null for anything else, which is most lines - the deck also prints
- * human-readable diagnostics that are none of this app's business.
+ * `EV <page> <cell> DOWN|UP` for a press, `EV <page> <cell> MOVE <y>` for a
+ * finger moving on a key the deck was asked about with `DRAG`,
+ * `EV <page> <cell> WHEEL <index>` for a wheel it came to rest, `PAGE <n>` when
+ * the deck navigates. Returns null for anything else, which is most lines -
+ * the deck also prints human-readable diagnostics that are none of this app's
+ * business.
  */
 export function parseEvent(line: string): DeckEvent | null {
     if (/^BOOT decky [3-7]$/.test(line)) return { kind: "reset", at: Date.now() };
@@ -150,17 +171,22 @@ export function parseEvent(line: string): DeckEvent | null {
         const page = Number(parts[1]);
         const cell = Number(parts[2]);
         const edge = parts[3];
-        if (
+        const key =
             Number.isInteger(page) &&
             Number.isInteger(cell) &&
             page >= 0 &&
             cell >= 0 &&
             cell < 15 &&
-            page < 64 &&
-            (edge === "DOWN" || edge === "UP")
-        ) {
+            page < 64;
+        if (key && (edge === "DOWN" || edge === "UP"))
             return { kind: "key", page, cell, down: edge === "DOWN", at: Date.now() };
-        }
+        const value = Number(parts[4]);
+        if (key && edge === "MOVE" && Number.isInteger(value) && Math.abs(value) < 10_000)
+            return { kind: "move", page, cell, y: value, at: Date.now() };
+        if (key && edge === "WHEEL" && Number.isInteger(value) && value >= 0 && value < 1000)
+            return { kind: "wheel", page, cell, index: value, at: Date.now() };
+        if (key && edge === "VALUE" && Number.isInteger(value) && value >= 0 && value <= 1000)
+            return { kind: "value", page, cell, value, at: Date.now() };
         return null;
     }
 
@@ -177,6 +203,8 @@ export function parseEvent(line: string): DeckEvent | null {
 export class DeckLink {
     private socket: Socket | null = null;
     private socketAddress = "";
+    // Bytes an upload goes in over USB: 128 unless the deck took more (BLOCK).
+    private serialBlock = BLOCK;
     private authenticated = false;
     // Set once the handshake succeeds; from then on every byte on the socket is a frame.
     private channel: SecureChannel | null = null;
@@ -202,6 +230,8 @@ export class DeckLink {
      * that outlive it.
      */
     onEvent: ((event: DeckEvent) => void) | null = null;
+    /** Lines that are no reply and no event: a crash report, a boot banner. */
+    onNoise: ((line: string) => void) | null = null;
 
     /** Serial devices that could be the deck, likeliest first. */
     static async listPorts(): Promise<PortChoice[]> {
@@ -247,14 +277,21 @@ export class DeckLink {
      * this app holds no copy of it: one description, on the device.
      */
     async identify(path: string): Promise<DeckIdentity | null> {
+        this.stuck = false;
         try {
             await this.open(path);
             const reply = await this.command("ID", 1500);
             return parseIdentity(reply.message, path);
-        } catch {
+        } catch (error) {
+            // Windows' "A device attached to the system is not functioning":
+            // the USB-serial chip itself stopped answering, which only
+            // unplugging it (or restarting the device) mends.
+            this.stuck = /not functioning|error code 31/i.test(String(error));
             return null;
         }
     }
+    /** The last port asked could not even be opened: its USB bridge is wedged. */
+    stuck = false;
     async identifyNetwork(
         address: string,
         secret: string,
@@ -374,7 +411,20 @@ export class DeckLink {
         this.port = port;
     }
 
+    /**
+     * Ask the deck to take uploads over USB in blocks of `bytes` (BLOCK), for
+     * this session; false where it keeps to 128. Blocks acknowledged one by one
+     * spend most of their time waiting for the answer: at 128 bytes a 24 KB
+     * look took 1.7 s.
+     */
+    async useBlock(bytes: number): Promise<boolean> {
+        const reply = await this.command(`BLOCK ${bytes}`, 2000);
+        if (reply.ok) this.serialBlock = bytes;
+        return reply.ok;
+    }
+
     async close(): Promise<void> {
+        this.serialBlock = BLOCK;
         this.socket?.destroy();
         this.socket = null;
         this.authenticated = false;
@@ -417,6 +467,10 @@ export class DeckLink {
                 const event = parseEvent(line);
                 if (event !== null) {
                     if (!this.socket || this.authenticated) this.onEvent?.(event);
+                } else if (DECK_NOISE.test(line)) {
+                    // What the deck prints when it crashes or starts: never a
+                    // reply, and worth keeping - it says why.
+                    this.onNoise?.(line);
                 } else {
                     const waiter = this.waiters.shift();
                     if (waiter) waiter(line);
@@ -481,6 +535,8 @@ export class DeckLink {
     /** Send a bare command and return the board's first OK or ERR. */
     async command(text: string, timeoutMs = 30_000): Promise<Reply> {
         this.lines = [];
+        // A new session: the deck is back to 128-byte blocks.
+        if (text.startsWith("HELLO ")) this.serialBlock = BLOCK;
         await this.write(Buffer.from(`${text}\n`, "latin1"));
 
         const deadline = Date.now() + timeoutMs;
@@ -529,7 +585,7 @@ export class DeckLink {
                         !Number.isInteger(negotiated) ||
                         negotiated < 1 ||
                         negotiated > 16384 ||
-                        (!this.socket && negotiated !== BLOCK)
+                        (!this.socket && negotiated !== BLOCK && negotiated !== this.serialBlock)
                     )
                         return { ok: false, message: "Invalid image transfer block size." };
                     blockSize = negotiated;
@@ -546,6 +602,15 @@ export class DeckLink {
             return { ok: false, message: "the deck did not answer" };
         }
 
+        // An upload that fails partway is written down: a block never
+        // acknowledged, or bytes the deck says went missing, is what a lossy
+        // link looks like.
+        const failed = (message: string): Reply => {
+            this.onNoise?.(
+                `upload failed: ${command.trim()} - ${message} (${sent}/${payload.length} bytes, ${blockSize}-byte blocks)`,
+            );
+            return { ok: false, message };
+        };
         let sent = 0;
         while (sent < payload.length) {
             const chunk = payload.subarray(sent, sent + blockSize);
@@ -553,12 +618,17 @@ export class DeckLink {
             sent += chunk.length;
 
             for (;;) {
-                const line = await this.nextLine(5000);
+                let line: string;
+                try {
+                    line = await this.nextLine(5000);
+                } catch {
+                    return failed("the deck did not acknowledge a block");
+                }
                 if (line === "A") {
                     break;
                 }
                 if (line.startsWith("ERR")) {
-                    return { ok: false, message: line };
+                    return failed(line);
                 }
             }
 
@@ -567,14 +637,19 @@ export class DeckLink {
 
         const deadline = Date.now() + 20_000;
         while (Date.now() < deadline) {
-            const line = await this.nextLine(deadline - Date.now());
+            let line: string;
+            try {
+                line = await this.nextLine(deadline - Date.now());
+            } catch {
+                break;
+            }
             if (line.startsWith("OK")) {
                 return { ok: true, message: line };
             }
             if (line.startsWith("ERR")) {
-                return { ok: false, message: line };
+                return failed(line);
             }
         }
-        return { ok: false, message: "no reply after the upload" };
+        return failed("no reply after the upload");
     }
 }

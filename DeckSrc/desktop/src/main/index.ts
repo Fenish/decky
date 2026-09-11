@@ -14,15 +14,23 @@ import {
 import type { WifiPair } from "./device/wifi";
 import type { WifiStatus } from "../shared/api";
 import { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, shell } from "electron";
-import { readFile, rm, stat, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { appendFile, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { crc32, DeckLink } from "./device/serial";
 import { loadConfig, saveConfig } from "./config/store";
 import { ActionRunner } from "./actions/runner";
 import { toSendKeys } from "./actions/hotkeys";
-import { BACK_CELL, createConfig, validateConfig } from "../shared/config";
-import type { DeckConfig, KeyStates } from "../shared/config";
-import type { DeckStatus, Reply, PageUpload } from "../shared/api";
+import {
+    BACK_CELL,
+    createConfig,
+    isWidgetKey,
+    keyAddress,
+    retireWidgets,
+    validateConfig,
+} from "../shared/config";
+import type { DeckConfig, DeckPage, KeyStates } from "../shared/config";
+import type { DeckStatus, Reply, PageUpload, Warmup } from "../shared/api";
 import { fellBackToWifi, transportOf } from "../shared/transport";
 import packageJson from "../../package.json";
 import { flashFirmware, PartitionChangeError, probeDevice } from "./device/flasher";
@@ -37,6 +45,23 @@ import {
 } from "./device/firmware-source";
 import { cancelAppUpdate, canInstallUpdates, installAppUpdate } from "./app-update";
 import { formatVersion, isNewerFirmware } from "../shared/firmware";
+import {
+    dialTimer,
+    HOLD_MS,
+    PingWatcher,
+    pressWidget,
+    SWIPE_PX,
+    WHEEL_STEP_PX,
+    WidgetStore,
+} from "./widgets";
+import { encodeLivePatch } from "../shared/live-patch";
+import { deckTurned, diceFaces, hasWheel } from "../shared/widgets";
+import { WindowsHost } from "./system/windows-host";
+import { WidgetFeeds } from "./widget-feeds";
+import { decodeWheelSpec } from "../shared/wheel-spec";
+import { decodeSlide } from "../shared/slide-spec";
+import { unpackPose } from "../shared/die";
+import type { Widget } from "../shared/widgets";
 import type {
     AppUpdateProgress,
     FirmwareInfo,
@@ -51,6 +76,43 @@ app.setAppUserModelId("app.decky.desktop");
 const link = new DeckLink();
 const runner = new ActionRunner();
 const keyStates = new KeyStateStore();
+// Widget state (counts, running timers), saved beside the profile; set up once the app is ready.
+let widgetStore!: WidgetStore;
+let pings!: PingWatcher;
+// Readings for widgets that show the PC and the web: load, volume, playing, prices.
+let feeds!: WidgetFeeds;
+// Widget keys held down on the deck. `hold` turns the press into a hold when
+// it fires, and is null once it has or the finger swiped. A swipe turns an
+// adjustable countdown's wheel: `applied` steps so far from where it began.
+interface WidgetPress {
+    hold: ReturnType<typeof setTimeout> | null;
+    startY?: number;
+    applied: number;
+    swiped: boolean;
+}
+const widgetPresses = new Map<string, WidgetPress>();
+// The keys the deck reports finger movement on, as last sent; null if unknown.
+let dragMask: number | null = null;
+// The newest picture asked for each widget key, until its turn to be sent: a
+// wheel turned faster than its patches travel skips the pictures between.
+const liveQueue = new Map<string, [frame: unknown, slide: unknown]>();
+// Keys the deck turns a wheel on, on the page it shows (page id and
+// signature): the look's CRC, the label it rests on, and the times behind
+// its labels. The deck drops them when another page shows or a picture is
+// sent for the key.
+interface ArmedWheel {
+    kind: "drum" | "dial" | "die";
+    pageId: string;
+    signature: number;
+    crc: number;
+    index: number;
+    values: number[];
+    /** Where a roll still spinning will land. */
+    rolling?: number;
+}
+const wheels = new Map<number, ArmedWheel>();
+// As liveQueue, for wheels: the newest arming asked for each key.
+const wheelQueue = new Map<string, unknown[]>();
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
 // Every size from 16 to 256 px, so the tray and taskbar stay sharp at any display scale.
@@ -227,6 +289,28 @@ let closing = false;
 // Pages the deck holds, as sent or confirmed this session. `toggles` names the ON
 // artwork that went with them, cell and CRC-32 of each.
 const uploaded = new Map<string, { signature: number; frames: Buffer[]; toggles: string }>();
+// Keys LIVE patches drew into, in each copy of a page the deck holds - by page
+// id, then signature - with the picture there now. Everywhere else a copy holds
+// the pictures it was sent. A patched key stays patched when its copy is shown
+// again or copied into the page's next version, so it is put right before a
+// key that is no longer a widget can keep a widget's picture.
+const livePatched = new Map<string, Map<number, Map<number, Buffer>>>();
+function patchesIn(pageId: string, signature: number): Map<number, Buffer> {
+    const copies = livePatched.get(pageId) ?? new Map<number, Map<number, Buffer>>();
+    const patches = copies.get(signature) ?? new Map<number, Buffer>();
+    livePatched.set(pageId, copies.set(signature, patches));
+    return patches;
+}
+// Text the deck slides along on keys, in each copy of a page it holds - by
+// page id, then signature - as the CRC of the SLIDE payload. A copy's text
+// goes with it, and a new version of a page starts with none (slide=1).
+const liveSlides = new Map<string, Map<number, Map<number, number>>>();
+function slidesIn(pageId: string, signature: number): Map<number, number> {
+    const copies = liveSlides.get(pageId) ?? new Map<number, Map<number, number>>();
+    const slides = copies.get(signature) ?? new Map<number, number>();
+    liveSlides.set(pageId, copies.set(signature, slides));
+    return slides;
+}
 const toggleArtwork = (toggleFrames: PageUpload["toggleFrames"]): string =>
     (toggleFrames ?? [])
         .map((item) => `${item.cell}:${crc32(Buffer.from(item.frame))}`)
@@ -246,12 +330,45 @@ function serial<T>(job: () => Promise<T>): Promise<T> {
     serialQueue = next.catch(() => {});
     return next;
 }
+/**
+ * What the deck printed that was no reply - a crash report, a boot banner -
+ * and why it last started, kept in `%APPDATA%/Decky/deck.log`. A deck that
+ * reboots mid-session otherwise leaves no trace: its crash report goes to the
+ * serial line, which nothing reads.
+ */
+let deckLogBytes = 0;
+function deckLog(line: string): void {
+    const text = `${new Date().toISOString()}  ${line}\n`;
+    // A few hundred KB at most: then it starts over.
+    const path = join(app.getPath("userData"), "deck.log");
+    const write = deckLogBytes > 256 * 1024 ? writeFile(path, text) : appendFile(path, text);
+    deckLogBytes = deckLogBytes > 256 * 1024 ? text.length : deckLogBytes + text.length;
+    void write.catch(() => {});
+}
+/** A deck that restarted because it crashed, a watchdog fired or its supply dipped: said so. */
+function noteRestart(reason: string | undefined): void {
+    if (!reason || !["panic", "taskwdt", "intwdt", "wdt", "brownout"].includes(reason)) return;
+    deckLog(`the deck last restarted: ${reason}`);
+    window?.webContents.send("action:activity", {
+        at: Date.now(),
+        label: "Decky",
+        ok: false,
+        message:
+            reason === "brownout"
+                ? "The deck restarted because its power dipped. Try another USB port or cable."
+                : "The deck restarted after a fault. Details are in deck.log.",
+    });
+}
 function resetDeviceCache(): void {
     storageWarningShown = false;
     cacheInitialized = false;
     deviceReady = false;
     displayed = null;
     uploaded.clear();
+    livePatched.clear();
+    liveSlides.clear();
+    dragMask = null;
+    wheels.clear();
     if (window && !window.isDestroyed())
         window.webContents.send("deck:event", { kind: "reset", at: Date.now() });
 }
@@ -344,8 +461,12 @@ async function transferPage(
             2000,
         );
         if (shown.ok) {
+            const restored = await restoreKeys(pageId, index, signature);
+            if (!restored.ok) return restored;
             displayed = { pageId, ...known };
+            forgetHiddenWheels();
             deviceReady = config.activePageId === pageId;
+            if (deviceReady) await syncDrag(config.pages[index]!);
             return { ok: true, message: "Keys synced." };
         }
         uploaded.delete(pageId);
@@ -359,13 +480,40 @@ async function transferPage(
     if (!reply.message.includes("cached=1")) {
         const base = Number(reply.message.match(/base=(\d+)/)?.[1]);
         const incremental = reply.message.includes("copied=1") && previous?.signature === base;
+        // The deck starts this version from its copy of `base`, whose own
+        // pictures are exactly as they were sent: live pictures are kept
+        // apart, and carried into the version (`live=` names them). So only
+        // keys whose picture changed go, each where the deck takes patches
+        // (live=1) as one against the picture it holds - a style change on a
+        // page of live widgets is one small patch, not every widget again.
+        const patching = status.connected && status.identity.live === true;
+        const { keyWidth: width, keyHeight: height } = status.connected
+            ? status.identity
+            : { keyWidth: 0, keyHeight: 0 };
+        const copiedPatches = incremental ? livePatched.get(pageId)?.get(base) : undefined;
+        const carried = Number(reply.message.match(/\blive=(\d+)/)?.[1] ?? 0);
+        livePatched.get(pageId)?.delete(signature);
+        liveSlides.get(pageId)?.delete(signature);
+        const sent = new Set<number>();
         try {
             for (let cell = 0; cell < 15; cell++) {
-                if (incremental && previous!.frames[cell]!.equals(Buffer.from(frames[cell]!)))
-                    continue;
-                reply = frames[cell]!.some((byte) => byte !== 0)
-                    ? await link.push(cell, frames[cell]!, () => {})
-                    : await link.command(`BLANK ${cell}`, 2000);
+                const frame = frames[cell]!;
+                if (incremental && previous!.frames[cell]!.equals(Buffer.from(frame))) continue;
+                sent.add(cell);
+                if (!frame.some((byte) => byte !== 0))
+                    reply = await link.command(`BLANK ${cell}`, 2000);
+                else if (patching) {
+                    // Against the copy's own picture; in a fresh copy the
+                    // deck holds nothing known, and the patch is the whole key.
+                    const held = incremental ? previous!.frames[cell]! : null;
+                    const payload = encodeLivePatch(held, frame, width, height);
+                    reply = await link.push(
+                        cell,
+                        payload,
+                        () => {},
+                        `PATCH ${cell} ${payload.length} ${crc32(payload)}`,
+                    );
+                } else reply = await link.push(cell, frame, () => {});
                 if (!reply.ok) {
                     await link.command("ABORT", 1000);
                     return reply;
@@ -378,6 +526,40 @@ async function transferPage(
             await link.command("ABORT", 1000).catch(() => {});
             throw error;
         }
+        // The live pictures the version carried, with the text sliding over
+        // them: kept where the key is still a widget whose picture is known;
+        // dropped where it moved or went, or it would go on showing its last.
+        const patches = patchesIn(pageId, signature);
+        for (let cell = 0; cell < 15; cell++) {
+            if (!(carried & (1 << cell)) || sent.has(cell)) continue;
+            const picture = copiedPatches?.get(cell);
+            if (picture && isWidgetKey(config.pages[index]!, cell)) {
+                patches.set(cell, picture);
+                const text = liveSlides.get(pageId)?.get(base)?.get(cell);
+                if (text !== undefined) slidesIn(pageId, signature).set(cell, text);
+                continue;
+            }
+            reply = await link.command(`LIVE ${index} ${signature} ${cell} 0 0 0`, 2000);
+            if (!reply.ok) return reply;
+        }
+        // A commit drops the deck's other copies of the page but the one shown.
+        for (const copies of [livePatched.get(pageId), liveSlides.get(pageId)])
+            for (const kept of copies?.keys() ?? [])
+                if (
+                    kept !== signature &&
+                    !(displayed?.pageId === pageId && displayed.signature === kept)
+                )
+                    copies!.delete(kept);
+    } else {
+        // A copy the deck kept: perhaps the very one the patches went to, and
+        // the same pictures with a widget moved share its signature. Read back
+        // from the card, it is as it was sent, and slides nothing.
+        if (reply.message.includes("storage=sd")) {
+            livePatched.get(pageId)?.delete(signature);
+            liveSlides.get(pageId)?.delete(signature);
+        }
+        reply = await restoreKeys(pageId, index, signature);
+        if (!reply.ok) return reply;
     }
     if (independentToggles)
         for (const alternate of toggleFrames!) {
@@ -398,9 +580,35 @@ async function transferPage(
             if (!reply.ok) return reply;
         }
         displayed = { pageId, ...record };
+        forgetHiddenWheels();
         deviceReady = config.activePageId === pageId;
+        if (deviceReady) await syncDrag(config.pages[index]!);
     }
     return { ok: true, message: cacheOnly ? "Page cached." : "Keys synced." };
+}
+/**
+ * Show the page's own pictures again on keys in the deck's copy `signature`
+ * that have live pictures and are widgets no longer - their live picture and
+ * sliding text dropped. Widget keys keep theirs; their next patch goes on top.
+ */
+async function restoreKeys(pageId: string, index: number, signature: number): Promise<Reply> {
+    const patches = livePatched.get(pageId)?.get(signature);
+    const slides = liveSlides.get(pageId)?.get(signature);
+    const page = config.pages[index];
+    if ((!patches?.size && !slides?.size) || !page || !status.connected)
+        return { ok: true, message: "" };
+    for (const cell of new Set([...(slides?.keys() ?? []), ...(patches?.keys() ?? [])])) {
+        if (isWidgetKey(page, cell)) continue;
+        // The key's own picture is intact: dropping its live one shows it,
+        // and drops the text sliding over it too.
+        const reply = patches?.has(cell)
+            ? await link.command(`LIVE ${index} ${signature} ${cell} 0 0 0`, 2000)
+            : await syncSlide(pageId, index, signature, cell, null);
+        if (!reply.ok) return reply;
+        patches?.delete(cell);
+        slides?.delete(cell);
+    }
+    return { ok: true, message: "" };
 }
 function reportStorageFailure(reply: Reply): void {
     if (
@@ -453,9 +661,15 @@ async function persist(
         const previousStates = keyStates.snapshot();
         keyStates.reconcile(config, next);
         afterReconcile?.(previousStates);
+        widgetStore.reconcile(next);
         config = next;
+        pings.sync(next);
+        feeds.sync(next);
         for (const id of uploaded.keys())
             if (!next.pages.some((page) => page.id === id)) uploaded.delete(id);
+        for (const copies of [livePatched, liveSlides])
+            for (const id of copies.keys())
+                if (!next.pages.some((page) => page.id === id)) copies.delete(id);
         window?.webContents.send("keys:states", keyStates.snapshot());
     });
     saveQueue = write.catch(() => {});
@@ -486,6 +700,8 @@ async function runKey(pageId: unknown, cell: unknown): Promise<Reply> {
     }
     const key = page.keys[String(cell)];
     if (!key) return { ok: false, message: "Assign an action to this key first." };
+    if (key.action.kind === "widget")
+        return useWidget(page.id, Number(cell), key.action.widget, false);
     const reply =
         key.action.kind === "page"
             ? (await navigate(key.action.pageId), { ok: true, message: "Page opened." })
@@ -511,6 +727,443 @@ async function runKey(pageId: unknown, cell: unknown): Promise<Reply> {
     }
     window?.webContents.send("action:activity", { at: Date.now(), label: key.label, ...reply });
     return reply;
+}
+/**
+ * A tap or a hold on a widget key. Widgets change their own state rather than
+ * running an action, or act on the PC: mute, play or pause, open Task Manager.
+ */
+function useWidget(pageId: string, cell: number, widget: Widget, hold: boolean): Reply {
+    const address = keyAddress(pageId, cell);
+    const failed = (error: unknown): void =>
+        void window?.webContents.send("action:activity", {
+            at: Date.now(),
+            label: "Widget",
+            ok: false,
+            message: String(error),
+        });
+    switch (widget.type) {
+        case "ping":
+            if (hold) return { ok: true, message: "Pings run on their own." };
+            pings.now(address);
+            return { ok: true, message: `Pinging ${widget.host}.` };
+        case "volume":
+        case "mic":
+            if (hold) return { ok: true, message: "Tap to mute or unmute." };
+            feeds.toggleMute(address, widget.type === "mic").catch(failed);
+            return { ok: true, message: "Muting or unmuting." };
+        case "media":
+            feeds.control(hold ? "media-next" : "media-toggle").catch(failed);
+            return { ok: true, message: hold ? "Next track." : "Play or pause." };
+        case "system":
+            if (hold) return { ok: true, message: "Tap to open Task Manager." };
+            spawn("taskmgr.exe", [], { detached: true, stdio: "ignore" })
+                .on("error", failed)
+                .unref();
+            return { ok: true, message: "Opening Task Manager." };
+        case "crypto":
+            feeds.now(address);
+            return { ok: true, message: "Checking the price." };
+        case "dice":
+            return { ok: true, message: rollDice(pageId, cell, widget) };
+    }
+    const result = pressWidget(widget, widgetStore.get(address), hold, Date.now());
+    if (!result.message) return { ok: true, message: "This widget has nothing to press." };
+    widgetStore.set(address, result.state);
+    return { ok: true, message: result.message };
+}
+/** The widget at a key of the profile as it is now, if it still is one. */
+function currentWidget(pageId: string, cell: number): Widget | undefined {
+    const page = config.pages.find((item) => item.id === pageId);
+    const action = page?.keys[String(cell)]?.action;
+    return page && isWidgetKey(page, cell) && action?.kind === "widget" ? action.widget : undefined;
+}
+/**
+ * A widget taps when it is let go, and holds the moment a press has lasted
+ * HOLD_MS: a stopwatch shows its reset while the finger is still down. A
+ * finger that swiped does neither.
+ */
+function widgetPress(page: DeckPage, cell: number, down: boolean): void {
+    const address = keyAddress(page.id, cell);
+    const press = widgetPresses.get(address);
+    if (press?.hold) clearTimeout(press.hold);
+    widgetPresses.delete(address);
+    if (down) {
+        const next: WidgetPress = { hold: null, applied: 0, swiped: false };
+        next.hold = setTimeout(() => {
+            next.hold = null;
+            const widget = currentWidget(page.id, cell);
+            if (widget) useWidget(page.id, cell, widget, true);
+        }, HOLD_MS);
+        widgetPresses.set(address, next);
+        return;
+    }
+    if (!press) return;
+    // The time a swipe picked was only in memory while the finger moved.
+    if (press.swiped) {
+        if (press.applied) widgetStore.save();
+        return;
+    }
+    const widget = currentWidget(page.id, cell);
+    if (press.hold && widget) useWidget(page.id, cell, widget, false);
+}
+/**
+ * A finger moving on a key the deck reports movement for. Past SWIPE_PX it is
+ * a swipe; every WHEEL_STEP_PX from where it began turns an adjustable
+ * countdown's wheel one step, up for more time, as a picker wheel rolls.
+ */
+function widgetMove(cell: number, y: number): void {
+    const address = keyAddress(config.activePageId, cell);
+    const press = widgetPresses.get(address);
+    if (!press) return;
+    if (press.startY === undefined) {
+        press.startY = y;
+        return;
+    }
+    const moved = press.startY - y;
+    if (!press.swiped && Math.abs(moved) >= SWIPE_PX) {
+        press.swiped = true;
+        if (press.hold) clearTimeout(press.hold);
+        press.hold = null;
+    }
+    // A wheel the deck turns itself needs nothing more from the finger here.
+    if (wheels.get(cell)?.pageId === config.activePageId) return;
+    const steps = Math.trunc(moved / WHEEL_STEP_PX);
+    if (!press.swiped || steps === press.applied) return;
+    const widget = currentWidget(config.activePageId, cell);
+    // Firmware without dials: the volume moves 2% a step.
+    if (widget?.type === "volume") {
+        const level = (widgetStore.get(address)?.level ?? 0) + (steps - press.applied) * 2;
+        press.applied = steps;
+        void feeds.setVolume(level);
+        return;
+    }
+    const next = widget ? dialTimer(widget, widgetStore.get(address), steps - press.applied) : null;
+    press.applied = steps;
+    if (next) widgetStore.set(address, next, false);
+}
+/** Wheels belong to the page the deck showed them on; another page drops them. */
+function forgetHiddenWheels(): void {
+    for (const [cell, armed] of wheels)
+        if (armed.pageId !== displayed?.pageId || armed.signature !== displayed.signature)
+            wheels.delete(cell);
+}
+/**
+ * Hand an adjustable countdown at rest to the deck, which draws and turns its
+ * wheel. A look the deck already keeps (by CRC) is armed with one line; only
+ * a new one travels whole.
+ */
+async function sendWheel(
+    pageId: unknown,
+    cell: unknown,
+    spec: unknown,
+    values: unknown,
+    index: unknown,
+): Promise<Reply> {
+    if (
+        typeof pageId !== "string" ||
+        !Number.isInteger(cell) ||
+        Number(cell) < 0 ||
+        Number(cell) > 14
+    )
+        throw new Error("Invalid key.");
+    if (!status.connected || !status.identity.wheel)
+        return { ok: false, message: "This firmware turns no wheels." };
+    const { keyWidth: width, keyHeight: height } = status.identity;
+    const look = spec instanceof Uint8Array ? decodeWheelSpec(spec, width, height) : null;
+    // A drum's labels each stand for a value (a time, a coin's side); a
+    // dial's index is its value, and a die's how it lies.
+    const count = look?.kind === "drum" ? look.labels.length : 0;
+    const [low, high] = look?.kind === "dial" ? [look.min, look.max] : [0, count - 1];
+    const placed =
+        look?.kind === "die"
+            ? unpackPose(Number(index)) !== null
+            : Number(index) >= low && Number(index) <= high;
+    if (
+        !look ||
+        !(spec instanceof Uint8Array) ||
+        !Array.isArray(values) ||
+        values.length !== count ||
+        values.some((v) => !Number.isInteger(v) || v < 0 || v > 86_399) ||
+        !Number.isInteger(index) ||
+        !placed
+    )
+        throw new Error("Invalid wheel.");
+    if (look.kind !== "drum" && !status.identity.dial)
+        return { ok: false, message: "This firmware turns no dials." };
+    const at = Number(cell);
+    const pageIndex = config.pages.findIndex((page) => page.id === pageId);
+    const record = uploaded.get(pageId);
+    if (!deviceReady || config.activePageId !== pageId || pageIndex < 0 || !record)
+        return { ok: true, message: "The page is not on the deck." };
+    const widget = currentWidget(pageId, at);
+    const turned =
+        widget && deckTurned(widget, widgetStore.get(keyAddress(pageId, at)), Date.now());
+    if (widget?.type === "timer" && hasWheel(widget) && !turned)
+        return { ok: true, message: "The countdown is running." };
+    if (turned !== look.kind) return { ok: true, message: "That key has no wheel." };
+    const crc = crc32(spec);
+    const armed = wheels.get(at);
+    if (
+        armed?.pageId === pageId &&
+        armed.signature === record.signature &&
+        armed.crc === crc &&
+        armed.index === index
+    )
+        return { ok: true, message: "Unchanged." };
+    let reply = await link.command(
+        `WHEELAT ${pageIndex} ${record.signature} ${at} ${index} ${crc}`,
+        2000,
+    );
+    if (!reply.ok && reply.message.includes("wheel unknown"))
+        reply = await link.push(
+            at,
+            spec,
+            () => {},
+            `WHEEL ${pageIndex} ${record.signature} ${at} ${index} ${spec.length} ${crc}`,
+        );
+    if (reply.ok)
+        wheels.set(at, {
+            kind: look.kind,
+            pageId,
+            signature: record.signature,
+            crc,
+            index: Number(index),
+            values: values as number[],
+        });
+    else wheels.delete(at);
+    return reply;
+}
+/**
+ * The deck's drum came to rest on a label: a countdown's time now, or the
+ * side a roll landed on. Or its die stopped: the face up, and where it lies.
+ */
+function wheelSettled(cell: number, index: number): void {
+    const armed = wheels.get(cell);
+    if (!armed || armed.pageId !== config.activePageId) return;
+    const widget = currentWidget(armed.pageId, cell);
+    const address = keyAddress(armed.pageId, cell);
+    if (armed.kind === "die") {
+        const pose = unpackPose(index);
+        if (!pose || widget?.type !== "dice") return;
+        armed.index = index;
+        widgetStore.set(address, { value: pose.face, rest: index });
+        return;
+    }
+    const value = armed.values[index];
+    if (value === undefined) return;
+    armed.index = index;
+    armed.rolling = undefined;
+    if (widget?.type === "timer" && hasWheel(widget))
+        widgetStore.set(address, { picked: { seconds: value, over: widget.seconds } });
+    else if (widget?.type === "dice") widgetStore.set(address, { value });
+}
+/** A finger turns the volume dial on the deck: Windows follows at once. */
+function dialTurned(cell: number, value: number): void {
+    const armed = wheels.get(cell);
+    if (!armed || armed.pageId !== config.activePageId) return;
+    if (currentWidget(armed.pageId, cell)?.type !== "volume") return;
+    armed.index = value;
+    void feeds.setVolume(value);
+}
+/**
+ * Roll dice: a face picked at random, which a drum on the deck spins to -
+ * two turns of faces at least - and lands on. Without one, the app shows it.
+ * A tap while it spins rolls on from where it was going, never back.
+ */
+function rollDice(pageId: string, cell: number, widget: Extract<Widget, { type: "dice" }>): string {
+    const faces = diceFaces(widget);
+    const pick = Math.floor(Math.random() * faces.length);
+    const armed = wheels.get(cell);
+    const pageIndex = config.pages.findIndex((page) => page.id === pageId);
+    // A die on the deck is thrown there, and lands however it lands.
+    if (armed?.kind === "die" && armed.pageId === pageId && deviceReady && pageIndex >= 0) {
+        const { signature } = armed;
+        void serial(() =>
+            link.command(`WHEELROLL ${pageIndex} ${signature} ${cell} 0`, 2000),
+        ).catch(() => {});
+        return "Rolling.";
+    }
+    if (armed?.pageId === pageId && deviceReady && pageIndex >= 0) {
+        let target = (armed.rolling ?? armed.index) + Math.max(10, faces.length * 2);
+        while (target < armed.values.length - 1 && armed.values[target] !== pick) target++;
+        if (armed.values[target] === pick) {
+            armed.rolling = target;
+            const { signature } = armed;
+            void serial(() =>
+                link.command(`WHEELROLL ${pageIndex} ${signature} ${cell} ${target}`, 2000),
+            ).catch(() => {});
+            return `Rolling for ${faces[pick]}.`;
+        }
+    }
+    widgetStore.set(keyAddress(pageId, cell), { value: pick });
+    return `Rolled ${faces[pick]}.`;
+}
+/** Tell the deck which keys of the page shown have wheels, if that changed. */
+async function syncDrag(page: DeckPage): Promise<void> {
+    if (!status.connected || !status.identity.drag) return;
+    let mask = 0;
+    for (let cell = 0; cell < 15; cell++) {
+        const action = page.keys[String(cell)]?.action;
+        // Keys a finger turns: a swipe on them is neither a tap nor a hold. A
+        // die is not turned but thrown, by any touch.
+        const turns =
+            action?.kind === "widget" &&
+            (hasWheel(action.widget) ||
+                action.widget.type === "volume" ||
+                (action.widget.type === "dice" && action.widget.mode !== "die"));
+        if (isWidgetKey(page, cell) && turns) mask |= 1 << cell;
+    }
+    if (mask === dragMask) return;
+    const reply = await link.command(`DRAG ${mask}`, 2000);
+    dragMask = reply.ok ? mask : null;
+}
+/**
+ * Bring a widget key on the deck up to date with a patch: what changed since
+ * the picture the deck holds. The deck checks that picture's CRC first, so a
+ * copy that drifted (reloaded from the SD card, rebuilt, a patch lost) is
+ * refused, and the whole key goes instead.
+ */
+async function sendLive(
+    pageId: unknown,
+    cell: unknown,
+    frame: unknown,
+    slide?: unknown,
+): Promise<Reply> {
+    if (
+        typeof pageId !== "string" ||
+        !Number.isInteger(cell) ||
+        Number(cell) < 0 ||
+        Number(cell) > 14
+    )
+        throw new Error("Invalid key.");
+    if (!status.connected || !status.identity.live)
+        return { ok: false, message: "This firmware shows widgets without updating them." };
+    const { keyWidth: width, keyHeight: height } = status.identity;
+    if (!(frame instanceof Uint8Array) || frame.length !== width * height * 2)
+        throw new Error("Invalid widget image.");
+    if (!validSlide(slide)) throw new Error("Invalid sliding text.");
+    const index = config.pages.findIndex((page) => page.id === pageId);
+    const record = uploaded.get(pageId);
+    // Pages not shown are kept up to date too where the deck takes it (warm=1),
+    // so one opens as it is now.
+    const reachable = config.activePageId === pageId || status.identity.warm === true;
+    if (!deviceReady || !reachable || index < 0 || !record)
+        return { ok: true, message: "The page is not on the deck." };
+    // A tick drawn just before the widget moved or went must not land where it was.
+    if (!isWidgetKey(config.pages[index]!, Number(cell)))
+        return { ok: true, message: "That key is not a widget." };
+    const reply = await patchKey(pageId, index, record, Number(cell), frame);
+    // The picture first, then its text: new text on an old picture would
+    // show both, for a moment, where the old picture had its own.
+    if (!reply.ok || slide === undefined) return reply;
+    return syncSlide(pageId, index, record.signature, Number(cell), slide);
+}
+/** Text the deck can slide on a key: a SLIDE payload it would take, or null for none. */
+function validSlide(slide: unknown): slide is Uint8Array | null | undefined {
+    if (slide === undefined || slide === null) return true;
+    if (!(slide instanceof Uint8Array) || !status.connected) return false;
+    return decodeSlide(slide, status.identity.keyWidth, status.identity.keyHeight) !== null;
+}
+/**
+ * Give a key in the deck's copy of a page (`signature`) the text it slides
+ * along, or take it away (null): only what differs from what that copy has.
+ */
+async function syncSlide(
+    pageId: string,
+    index: number,
+    signature: number,
+    cell: number,
+    slide: Uint8Array | null,
+): Promise<Reply> {
+    if (!status.connected || !status.identity.slide)
+        return { ok: true, message: "This firmware slides no text." };
+    const slides = slidesIn(pageId, signature);
+    const crc = slide ? crc32(slide) : undefined;
+    if (slides.get(cell) === crc) return { ok: true, message: "Unchanged." };
+    const reply = slide
+        ? await link.push(
+              cell,
+              slide,
+              () => {},
+              `SLIDE ${index} ${signature} ${cell} ${slide.length} ${crc}`,
+          )
+        : await link.command(`SLIDE ${index} ${signature} ${cell} 0 0`, 2000);
+    if (reply.ok && crc !== undefined) slides.set(cell, crc);
+    else if (reply.ok) slides.delete(cell);
+    return reply;
+}
+/**
+ * Patch a key in the deck's copy of a page (any it holds, shown or not): what
+ * changed since the picture it holds there.
+ */
+async function patchKey(
+    pageId: string,
+    index: number,
+    record: { signature: number; frames: Buffer[] },
+    cell: number,
+    frame: Uint8Array,
+): Promise<Reply> {
+    if (!status.connected) return { ok: false, message: "Decky is disconnected." };
+    const { keyWidth: width, keyHeight: height } = status.identity;
+    const patches = patchesIn(pageId, record.signature);
+    const next = Buffer.from(frame);
+    const base = patches.get(cell) ?? record.frames[cell]!;
+    if (base.equals(next)) return { ok: true, message: "Unchanged." };
+    const send = (payload: Uint8Array, baseCrc: number): Promise<Reply> =>
+        link.push(
+            cell,
+            payload,
+            () => {},
+            `LIVE ${index} ${record.signature} ${cell} ${baseCrc} ${payload.length} ${crc32(payload)}`,
+        );
+    let reply = await send(encodeLivePatch(base, next, width, height), crc32(base));
+    if (!reply.ok && reply.message.includes("live base"))
+        reply = await send(encodeLivePatch(null, next, width, height), 0);
+    if (reply.ok) patches.set(cell, next);
+    // The deck's wheel on a key of the page shown ends with a picture for it.
+    if (reply.ok && wheels.get(cell)?.pageId === pageId) wheels.delete(cell);
+    return reply;
+}
+/**
+ * While the deck loads: every page's widget pictures as they are now, and the
+ * looks of the keys it turns, sent ahead - what `warmup` holds that is valid.
+ */
+function warmupItems(warmup: unknown): Warmup {
+    const none: Warmup = { widgets: [], looks: [] };
+    if (!status.connected || !status.identity.warm || typeof warmup !== "object" || !warmup)
+        return none;
+    const { widgets, looks } = warmup as Record<string, unknown>;
+    const bytes = status.identity.keyWidth * status.identity.keyHeight * 2;
+    const pageOf = (id: unknown) => config.pages.find((page) => page.id === id);
+    return {
+        widgets: (Array.isArray(widgets) ? widgets.slice(0, 64 * 15) : []).filter(
+            (item): item is Warmup["widgets"][number] => {
+                const page = pageOf(item?.pageId);
+                return (
+                    !!page &&
+                    Number.isInteger(item.cell) &&
+                    item.cell >= 0 &&
+                    item.cell <= 14 &&
+                    isWidgetKey(page, item.cell) &&
+                    item.frame instanceof Uint8Array &&
+                    item.frame.length === bytes &&
+                    validSlide(item.slide)
+                );
+            },
+        ),
+        looks: (Array.isArray(looks) ? looks.slice(0, 32) : []).filter(
+            (item): item is Warmup["looks"][number] =>
+                !!pageOf(item?.pageId) &&
+                item.spec instanceof Uint8Array &&
+                item.spec.length > 0 &&
+                item.spec.length <= 48 * 1024 &&
+                decodeWheelSpec(
+                    item.spec,
+                    status.connected ? status.identity.keyWidth : 0,
+                    status.connected ? status.identity.keyHeight : 0,
+                ) !== null,
+        ),
+    };
 }
 function registerHandlers(): void {
     const handle = (channel: string, fn: (...args: unknown[]) => unknown): void => {
@@ -700,13 +1353,40 @@ function registerHandlers(): void {
         const from = location(source),
             to = location(target);
         const result = moveKey(config, from, to);
-        return persist(result.config, (states) => keyStates.move(states, from, to, result.swapped));
+        return persist(result.config, (states) => {
+            keyStates.move(states, from, to, result.swapped);
+            widgetStore.move(from, to, result.swapped);
+        });
     });
     handle("keys:duplicate", async (source) => {
         const result = duplicateKey(config, location(source));
         return { config: await persist(result.config), cell: result.cell };
     });
     handle("keys:states", () => keyStates.snapshot());
+    handle("widgets:states", () => widgetStore.snapshot());
+    handle("deck:live", (pageId, cell, frame, slide) => {
+        const address = `${String(pageId)}:${String(cell)}`;
+        const waiting = liveQueue.has(address);
+        liveQueue.set(address, [frame, slide]);
+        // The send already waiting for this key takes the newest picture.
+        if (waiting) return { ok: true, message: "Queued." };
+        return serial(() => {
+            const [newest, text] = liveQueue.get(address)!;
+            liveQueue.delete(address);
+            return sendLive(pageId, cell, newest, text);
+        });
+    });
+    handle("deck:wheel", (pageId, cell, spec, values, index) => {
+        const address = `${String(pageId)}:${String(cell)}`;
+        const waiting = wheelQueue.has(address);
+        wheelQueue.set(address, [spec, values, index]);
+        if (waiting) return { ok: true, message: "Queued." };
+        return serial(() => {
+            const [newest, times, at] = wheelQueue.get(address)!;
+            wheelQueue.delete(address);
+            return sendWheel(pageId, cell, newest, times, at);
+        });
+    });
     handle("config:get", () => config);
     handle("config:save", (value) => {
         validateConfig(value);
@@ -751,12 +1431,18 @@ function registerHandlers(): void {
         status = { connected: false };
         cacheInitialized = false;
         uploaded.clear();
+        livePatched.clear();
+        liveSlides.clear();
+        dragMask = null;
+        wheels.clear();
         deviceReady = false;
         displayed = null;
         await link.close();
         const ports = await DeckLink.listPorts();
         for (const known of [...silentPorts.keys()])
             if (!ports.some((port) => port.path === known)) silentPorts.delete(known);
+        // A port whose USB bridge stopped answering: not a silent device to set up.
+        let stuckPort: string | undefined;
         for (const port of ports) {
             let identity = await link.identify(port.path);
             let silences = identity ? 0 : (silentPorts.get(port.path) ?? 0) + 1;
@@ -769,11 +1455,15 @@ function registerHandlers(): void {
             }
             if (identity) {
                 status = { connected: true, identity };
+                noteRestart(identity.resetReason);
                 silentPorts.clear();
                 notThisDeck.clear();
                 return;
             }
-            silentPorts.set(port.path, silences);
+            if (link.stuck) {
+                stuckPort = port.path;
+                silentPorts.delete(port.path);
+            } else silentPorts.set(port.path, silences);
         }
         await link.close();
         if (await connectWireless()) return;
@@ -781,7 +1471,11 @@ function registerHandlers(): void {
         const unknownDevices = ports
             .filter((port) => (silentPorts.get(port.path) ?? 0) >= SILENT_CHECKS)
             .map((port) => ({ path: port.path, label: port.label }));
-        status = { connected: false, ...(unknownDevices.length ? { unknownDevices } : {}) };
+        status = {
+            connected: false,
+            ...(unknownDevices.length ? { unknownDevices } : {}),
+            ...(stuckPort ? { stuckPort } : {}),
+        };
     };
     handle("programs:list", listPrograms);
     handle("programs:icon", getProgramIcon);
@@ -817,6 +1511,7 @@ function registerHandlers(): void {
         if (!path) return null;
         if ((await stat(path)).size > 24 * 1024 * 1024) throw new Error("Profile exceeds 24 MB.");
         const next: unknown = JSON.parse(await readFile(path, "utf8"));
+        retireWidgets(next);
         validateConfig(next);
         const answer = await dialog.showMessageBox(window!, {
             type: "question",
@@ -846,7 +1541,7 @@ function registerHandlers(): void {
             return transferPage(pageId, frames, false, toggleFrames as PageUpload["toggleFrames"]);
         }),
     );
-    handle("pages:cache", (pages) =>
+    handle("pages:cache", (pages, warmup) =>
         serial(async (): Promise<Reply> => {
             if (!status.connected || status.identity.protocol < 3)
                 return { ok: false, message: "Page preloading requires Decky firmware v3." };
@@ -871,18 +1566,50 @@ function registerHandlers(): void {
                     ok: false,
                     message: `Decky can hold ${capacity} page snapshots in memory; this profile has ${pages.length}. The current page will still work.`,
                 };
+            const warm = warmupItems(warmup);
             deviceReady = false;
             if (!cacheInitialized) {
+                // The deck's progress counts every key, ON picture, widget
+                // picture and look to come.
                 const units =
                     status.identity.protocol >= 4
-                        ? ` ${(pages as PageUpload[]).reduce((sum, page) => sum + 15 + (page.toggleFrames?.length ?? 0), 0)}`
+                        ? ` ${(pages as PageUpload[]).reduce((sum, page) => sum + 15 + (page.toggleFrames?.length ?? 0), 0) + warm.widgets.length + warm.looks.length}`
                         : "";
                 const reply = await link.command(`HELLO ${pages.length}${units}`, 2000);
                 if (!reply.ok) return reply;
+                // A new session on the deck: it forgets which keys have wheels,
+                // and any text it slid.
+                dragMask = null;
+                wheels.clear();
+                liveSlides.clear();
+                // Uploads over USB in 2 KB blocks where the deck takes them.
+                if ((status.identity.block ?? 0) >= 2048) await link.useBlock(2048);
             }
             for (const page of pages as PageUpload[]) {
                 const reply = await transferPage(page.pageId, page.frames, true, page.toggleFrames);
                 if (!reply.ok) return reply;
+            }
+            // Every page's widgets as they are now, and the looks of the keys
+            // the deck turns, while it still shows its progress: no page
+            // opens on placeholders, or waits for a look.
+            for (const item of warm.widgets) {
+                const index = config.pages.findIndex((page) => page.id === item.pageId);
+                const record = uploaded.get(item.pageId);
+                if (index < 0 || !record) continue;
+                const patched = await patchKey(item.pageId, index, record, item.cell, item.frame);
+                if (patched.ok && item.slide !== undefined)
+                    await syncSlide(item.pageId, index, record.signature, item.cell, item.slide);
+            }
+            for (const look of warm.looks) {
+                const index = config.pages.findIndex((page) => page.id === look.pageId);
+                const record = uploaded.get(look.pageId);
+                if (index >= 0 && record)
+                    await link.push(
+                        -1,
+                        look.spec,
+                        () => {},
+                        `WHEEL ${index} ${record.signature} -1 0 ${look.spec.length} ${crc32(look.spec)}`,
+                    );
             }
             const active = (pages as PageUpload[]).find(
                 (page) => page.pageId === config.activePageId,
@@ -909,6 +1636,12 @@ else {
         configPath = join(app.getPath("userData"), "decky.json");
         wifiPath = join(app.getPath("userData"), "wifi-pair.json");
         wifiPair = await loadWifiPair(wifiPath);
+        widgetStore = new WidgetStore(join(app.getPath("userData"), "widgets.json"), (states) => {
+            if (window && !window.isDestroyed()) window.webContents.send("widgets:states", states);
+        });
+        await widgetStore.load();
+        pings = new PingWatcher(widgetStore);
+        feeds = new WidgetFeeds(widgetStore, new WindowsHost(app.getPath("userData")));
         try {
             config = await loadConfig(
                 configPath,
@@ -919,6 +1652,9 @@ else {
             app.quit();
             return;
         }
+        widgetStore.reconcile(config);
+        pings.sync(config);
+        feeds.sync(config);
         Menu.setApplicationMenu(null);
         window = new BrowserWindow({
             title: "Decky",
@@ -935,6 +1671,12 @@ else {
                 contextIsolation: true,
                 nodeIntegration: false,
                 sandbox: true,
+                // Widgets tick from the window's timers, and Decky mostly sits in
+                // the tray: hidden, Chromium would slow them to once a minute.
+                backgroundThrottling: false,
+                // A countdown's sound plays whenever it ends, often with the
+                // window hidden and never touched since Decky started.
+                autoplayPolicy: "no-user-gesture-required",
             },
         });
         const publishWindowState = (): void => {
@@ -1015,23 +1757,41 @@ else {
                 })
                 .catch(() => {});
         }, PORT_WATCH_MS).unref();
+        link.onNoise = (line) => deckLog(line);
         link.onEvent = (event) => {
             if (quitting) return;
             if (event.kind === "reset") {
+                deckLog("BOOT: the deck started again");
                 resetDeviceCache();
+                return;
+            }
+            // Finger movement turns wheels; the window has no use for it.
+            if (event.kind === "wheel") {
+                if (deviceReady) wheelSettled(event.cell, event.index);
+                return;
+            }
+            if (event.kind === "value") {
+                if (deviceReady) dialTurned(event.cell, event.value);
+                return;
+            }
+            if (event.kind === "move") {
+                if (deviceReady) widgetMove(event.cell, event.y);
                 return;
             }
             window?.webContents.send("deck:event", event);
             if (
                 event.kind === "key" &&
-                event.down &&
                 (deviceReady || (status.connected && status.identity.protocol < 2))
             ) {
                 const page =
                     status.connected && status.identity.protocol < 2
                         ? config.pages[event.page]
                         : config.pages.find((p) => p.id === config.activePageId);
-                if (page)
+                if (page && isWidgetKey(page, event.cell)) {
+                    widgetPress(page, event.cell, event.down);
+                    return;
+                }
+                if (page && event.down)
                     void runKey(page.id, event.cell).catch((error) =>
                         window?.webContents.send("action:activity", {
                             at: Date.now(),
@@ -1056,6 +1816,8 @@ else {
         if (heartbeat) clearInterval(heartbeat);
         tray?.destroy();
         runner.cancel();
+        pings?.stop();
+        feeds?.stop();
         const goodbye = async (): Promise<void> => {
             // No BYE when quitting for the installer: that would turn the deck's
             // "Updating Decky" into Disconnected while the new version installs.

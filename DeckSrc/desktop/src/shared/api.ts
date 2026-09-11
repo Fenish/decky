@@ -1,6 +1,7 @@
 import type { KeyLocation } from "./key-layout";
 import type { InstalledProgram } from "./programs";
 import type { DeckConfig, KeyStates } from "./config";
+import type { WidgetStates } from "./widgets";
 export interface DeckIdentity {
     portPath: string;
     protocol: number;
@@ -15,6 +16,30 @@ export interface DeckIdentity {
     /** Firmware release or build, from protocol 7 on. */
     firmwareVersion?: string;
     persistentCache?: boolean;
+    /**
+     * The deck takes LIVE patches for widget keys (reported as live=1), into
+     * live pictures kept apart from the page's own: a new version of a page
+     * needs only its changed keys, sent as patches (PATCH), and LIVE with no
+     * bytes drops a key's live picture.
+     */
+    live?: boolean;
+    /** The deck reports finger movement on keys named with DRAG (drag=1). */
+    drag?: boolean;
+    /** The deck draws and turns picker wheels by itself (WHEEL, wheel=1). */
+    wheel?: boolean;
+    /** And dials: a volume arc or bar under the finger (dial=1). */
+    dial?: boolean;
+    /**
+     * While it loads, it takes every page's widget pictures and keeps looks
+     * sent ahead, counting them in its progress (warm=1).
+     */
+    warm?: boolean;
+    /** The largest block it takes uploads in over USB, when asked with BLOCK. */
+    block?: number;
+    /** It slides text too long for its key along by itself (SLIDE, slide=1). */
+    slide?: boolean;
+    /** Why it last started: poweron, sw, panic, taskwdt, brownout... */
+    resetReason?: string;
 }
 /** A USB-serial device that stayed silent when asked for its identity: possibly a deck without Decky firmware. */
 export interface UnknownDevice {
@@ -23,7 +48,12 @@ export interface UnknownDevice {
 }
 export type DeckStatus =
     | { connected: true; identity: DeckIdentity }
-    | { connected: false; unknownDevices?: UnknownDevice[] };
+    | {
+          connected: false;
+          unknownDevices?: UnknownDevice[];
+          /** A deck's USB bridge that stopped answering: unplug it and plug it back in. */
+          stuckPort?: string;
+      };
 
 export interface FirmwareOffer {
     source: "bundled" | "github";
@@ -106,6 +136,12 @@ export interface WifiStatus {
 }
 export type DeckEvent =
     | { kind: "key"; page: number; cell: number; down: boolean; at: number }
+    /** A finger moving on a wheel key: its height inside the key, in pixels. */
+    | { kind: "move"; page: number; cell: number; y: number; at: number }
+    /** A wheel the deck turns came to rest on a new label. */
+    | { kind: "wheel"; page: number; cell: number; index: number; at: number }
+    /** A dial the deck turns has a new value, while a finger turns it. */
+    | { kind: "value"; page: number; cell: number; value: number; at: number }
     | { kind: "page"; page: number; at: number }
     | { kind: "reset"; at: number }
     /** USB was lost and the connection continued over Wi-Fi. */
@@ -131,12 +167,21 @@ export interface PageUpload {
     frames: Uint8Array[];
     toggleFrames?: { cell: number; frame: Uint8Array }[];
 }
+/**
+ * What loading brings up to date besides the pages themselves: every widget
+ * key's picture as it is now, with the text the deck slides on it (slide=1),
+ * and the looks of the keys the deck turns, so no page opens on placeholders.
+ */
+export interface Warmup {
+    widgets: { pageId: string; cell: number; frame: Uint8Array; slide?: Uint8Array | null }[];
+    looks: { pageId: string; spec: Uint8Array }[];
+}
 export interface DeckApi {
     wifiStatus(): Promise<WifiStatus>;
     wifiScan(): Promise<WifiNetwork[]>;
     wifiJoin(ssid: string, password: string): Promise<Reply>;
     wifiForget(): Promise<Reply>;
-    cachePages(pages: PageUpload[]): Promise<Reply>;
+    cachePages(pages: PageUpload[], warmup?: Warmup): Promise<Reply>;
     moveKey(from: KeyLocation, to: KeyLocation): Promise<DeckConfig>;
     duplicateKey(from: KeyLocation): Promise<{ config: DeckConfig; cell: number }>;
     listPrograms(): Promise<InstalledProgram[]>;
@@ -163,6 +208,32 @@ export interface DeckApi {
     getConfig(): Promise<DeckConfig>;
     getKeyStates(): Promise<KeyStates>;
     onKeyStates(handler: (states: KeyStates) => void): () => void;
+    /** Counts, running timers and server results, by key address. */
+    widgetStates(): Promise<WidgetStates>;
+    onWidgetStates(handler: (states: WidgetStates) => void): () => void;
+    /**
+     * Show a widget key's new picture on the deck, as a patch where it can,
+     * and where the deck slides text along (slide=1) the text it slides on
+     * it: a SLIDE payload, or null for none. Undefined leaves that alone.
+     */
+    liveKey(
+        pageId: string,
+        cell: number,
+        frame: Uint8Array,
+        slide?: Uint8Array | null,
+    ): Promise<Reply>;
+    /**
+     * Hand an adjustable countdown at rest to the deck to draw and turn: its
+     * wheel's look (src/shared/wheel-spec.ts), the times behind its labels,
+     * and the label to show.
+     */
+    wheelKey(
+        pageId: string,
+        cell: number,
+        spec: Uint8Array,
+        values: number[],
+        index: number,
+    ): Promise<Reply>;
     saveConfig(config: DeckConfig): Promise<DeckConfig>;
     pickTarget(kind: "program" | "script"): Promise<string | null>;
     runKey(pageId: string, cell: number): Promise<Reply>;

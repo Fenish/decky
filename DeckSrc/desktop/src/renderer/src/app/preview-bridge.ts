@@ -1,12 +1,13 @@
 import { duplicateKey, moveKey } from "../../../shared/key-layout";
 import type { DeckApi } from "../../../shared/api";
-import { createConfig, validateConfig } from "../../../shared/config";
+import { createConfig, retireWidgets, validateConfig } from "../../../shared/config";
 // Browser previews use their own storage. Native actions remain unavailable there.
 export function installPreviewBridge(): void {
     if (window.deck) return;
     let config = createConfig();
     try {
         const saved: unknown = JSON.parse(localStorage.getItem("decky-preview") ?? "null");
+        retireWidgets(saved);
         validateConfig(saved);
         config = saved;
     } catch {
@@ -81,6 +82,10 @@ export function installPreviewBridge(): void {
         onWindowState: () => () => {},
         getKeyStates: async () => ({}),
         onKeyStates: () => () => {},
+        widgetStates: async () => ({}),
+        onWidgetStates: () => () => {},
+        liveKey: unavailable,
+        wheelKey: unavailable,
         status: async () => ({ connected: false }),
         getConfig: async () => structuredClone(config),
         saveConfig: async (next) => {

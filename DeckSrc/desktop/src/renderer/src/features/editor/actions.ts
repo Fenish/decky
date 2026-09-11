@@ -1,5 +1,6 @@
 import type { Action, Step } from "../../../../shared/config";
 import { nextFreeHotkey } from "../../../../shared/hotkey-pool";
+import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets";
 export const ACTION_LABELS: Record<Action["kind"], string> = {
     hotkey: "Hotkey",
     program: "Launch program",
@@ -8,6 +9,7 @@ export const ACTION_LABELS: Record<Action["kind"], string> = {
     macro: "Macro",
     page: "Open page",
     delay: "Delay",
+    widget: "Widget",
 };
 /**
  * A fresh step of one kind.
@@ -34,6 +36,7 @@ export function defaultStep(kind: Step["kind"], taken: string[] = []): Step {
 export function defaultAction(kind: Action["kind"], pageId = "home", taken: string[] = []): Action {
     if (kind === "macro") return { kind, steps: [{ kind: "delay", ms: 500 }] };
     if (kind === "page") return { kind, pageId };
+    if (kind === "widget") return { kind, widget: defaultWidget("clock") };
     return defaultStep(kind, taken);
 }
 export function actionSummary(action: Action): string {
@@ -51,5 +54,7 @@ export function actionSummary(action: Action): string {
             return "Open page";
         case "delay":
             return `${action.ms} ms`;
+        case "widget":
+            return WIDGET_CHOICES.find((choice) => choice.type === action.widget.type)!.label;
     }
 }

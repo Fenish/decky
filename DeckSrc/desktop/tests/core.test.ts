@@ -72,6 +72,9 @@ describe("wire protocol", () => {
             parseIdentity(line.replace("decky 2", "decky 3") + " cache=8", "COM5"),
         ).toMatchObject({ protocol: 3, cacheSlots: 8 });
         expect(parseIdentity(line.replace("decky 2", "streamdeck 1"), "COM5")?.protocol).toBe(1);
+        // Why it last started, when the firmware says.
+        expect(parseIdentity(`${line} reset=panic`, "COM5")?.resetReason).toBe("panic");
+        expect(parseIdentity(line, "COM5")?.resetReason).toBeUndefined();
         expect(parseIdentity(line.replace("cells=15", "cells=100"), "COM5")).toBeNull();
     });
     it("separates key edges from replies and rejects out-of-range keys", () => {
@@ -123,6 +126,46 @@ describe("durable settings", () => {
             await expect(loadConfig(path, "missing")).rejects.toThrow(/recovery/);
             expect((await readdir(dir)).some((name) => name.includes("recovery"))).toBe(true);
             expect(await readFile(path, "utf8")).toBe("broken");
+        } finally {
+            await rm(dir, { recursive: true, force: true });
+        }
+    });
+    it("still loads a profile with widgets Decky no longer has", async () => {
+        const dir = await mkdtemp(join(tmpdir(), "decky-test-"));
+        try {
+            const path = join(dir, "decky.json");
+            const saved = createConfig();
+            const widget = (value: object) => ({
+                label: "",
+                icon: "Clock",
+                color: "#eee8da",
+                action: { kind: "widget", widget: value },
+            });
+            Object.assign(saved.pages[0]!.keys, {
+                3: widget({ type: "network", style: "graph", unit: "bits", interval: 2 }),
+                4: widget({
+                    type: "crypto",
+                    coin: "bitcoin",
+                    currency: "try",
+                    style: "chart",
+                    interval: 300,
+                }),
+                5: widget({ type: "mic", style: "badge" }),
+            });
+            await writeFile(path, JSON.stringify(saved));
+            const loaded = await loadConfig(path, "missing");
+            // The network key is empty; the price is live, in dollars.
+            expect(loaded.pages[0]!.keys[3]).toBeUndefined();
+            expect(loaded.pages[0]!.keys[4]!.action).toEqual({
+                kind: "widget",
+                widget: { type: "crypto", coin: "bitcoin", style: "chart" },
+            });
+            // A microphone has one look now.
+            expect(loaded.pages[0]!.keys[5]!.action).toEqual({
+                kind: "widget",
+                widget: { type: "mic" },
+            });
+            expect((await readdir(dir)).some((name) => name.includes("recovery"))).toBe(false);
         } finally {
             await rm(dir, { recursive: true, force: true });
         }

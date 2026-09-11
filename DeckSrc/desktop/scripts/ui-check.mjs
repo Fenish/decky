@@ -52,6 +52,21 @@ try {
         const states = {};
         const configListeners = new Set();
         const stateListeners = new Set();
+        const widgetListeners = new Set();
+        // Widget state as the main process would push it, for the checks.
+        window.__setWidgetStates = (next) => widgetListeners.forEach((fn) => fn(next));
+        // Sound is heard, not seen: the checks follow what the page asks of it.
+        window.__playing = false;
+        window.HTMLMediaElement.prototype.play = function () {
+            Object.defineProperty(this, "paused", { value: false, configurable: true });
+            window.__playing = true;
+            window.__sound = this.src;
+            return Promise.resolve();
+        };
+        window.HTMLMediaElement.prototype.pause = function () {
+            Object.defineProperty(this, "paused", { value: true, configurable: true });
+            window.__playing = false;
+        };
         const listen = (set, fn) => {
             set.add(fn);
             return () => set.delete(fn);
@@ -208,11 +223,22 @@ try {
                     keyWidth: 118,
                     keyHeight: 123,
                     pages: 2,
+                    live: true,
                 },
             }),
             getConfig: async () => config,
             getKeyStates: async () => states,
             onKeyStates: (fn) => listen(stateListeners, fn),
+            widgetStates: async () => ({}),
+            onWidgetStates: (fn) => listen(widgetListeners, fn),
+            liveKey: async (pageId, cell, frame) => {
+                (window.__liveFrames ??= []).push({ pageId, cell, bytes: frame.length });
+                return { ok: true, message: "" };
+            },
+            wheelKey: async (pageId, cell, spec, values, index) => {
+                (window.__wheels ??= []).push({ pageId, cell, bytes: spec.length, values, index });
+                return { ok: true, message: "" };
+            },
             onConfig: (fn) => listen(configListeners, fn),
             onEvent: (fn) => {
                 window.__deviceEvent = fn;
@@ -311,8 +337,25 @@ try {
     const narrow = await page.locator(".floating-deck").boundingBox();
     if (!wide || !narrow || narrow.width >= wide.width || narrow.x >= wide.x)
         throw new Error("Grid did not shrink and slide left");
-    await expect(page.locator(".action-options button")).toHaveCount(6);
+    await expect(page.locator(".action-options").first().locator("button")).toHaveCount(6);
+    // Widgets are one step in, behind their own entry, with a way back.
+    await expect(page.getByRole("group", { name: "Widgets", exact: true })).toHaveCount(0);
     await page.screenshot({ path: "output/decky-action-picker.png" });
+    await page.locator(".widgets-entry").click();
+    await expect(
+        page.getByRole("group", { name: "Widgets", exact: true }).getByRole("button"),
+    ).toHaveCount(13);
+    await page.screenshot({ path: "output/decky-widget-picker.png" });
+    await page.getByRole("button", { name: "Back to actions", exact: true }).click();
+    await page.getByLabel("Find an action", { exact: true }).fill("spotify");
+    await expect(
+        page.getByRole("group", { name: "Widgets", exact: true }).getByRole("button"),
+    ).toHaveText(["Now playing"]);
+    await page.getByLabel("Find an action", { exact: true }).fill("");
+    // A choice made in the picker can be taken back until the key is saved.
+    await page.getByRole("button", { name: "Macro", exact: true }).click();
+    await page.getByRole("button", { name: "Back to actions", exact: true }).click();
+    await expect(page.locator(".action-options").first().locator("button")).toHaveCount(6);
     await page.getByRole("button", { name: "Macro", exact: true }).click();
     await page.getByLabel("Key title", { exact: true }).fill("Go live");
     await page.getByRole("button", { name: "Add step", exact: true }).click();
@@ -551,6 +594,128 @@ try {
     );
     if (removed.artwork || !removed.activeAppearance.artwork)
         throw new Error("Image removal affected the wrong toggle state");
+    // Widgets: a clock with settings of its own, drawn live instead of an icon.
+    await page.getByRole("button", { name: "Key 12: Unassigned", exact: true }).click();
+    const pickClock = () =>
+        page
+            .getByRole("group", { name: "Widgets", exact: true })
+            .getByRole("button", { name: "Clock", exact: true })
+            .click();
+    await page.locator(".widgets-entry").click();
+    await pickClock();
+    // Back from a widget goes to the widgets, not all the way out.
+    await page.getByRole("button", { name: "Back to widgets", exact: true }).click();
+    await pickClock();
+    await expect(page.getByRole("tab", { name: "Widget", exact: true })).toBeVisible();
+    // A widget is always a normal button: its presses are its own.
+    await expect(page.getByRole("button", { name: "Toggle", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Analog style", exact: true }).click();
+    await page
+        .getByRole("group", { name: "Format", exact: true })
+        .getByRole("button", { name: "12-hour", exact: true })
+        .click();
+    await page.getByRole("switch", { name: "Show seconds", exact: true }).click();
+    // The date belongs to the digital face only.
+    await expect(page.getByRole("switch", { name: "Show date", exact: true })).toHaveCount(0);
+    await page.getByLabel("Time zone", { exact: true }).selectOption("Asia/Tokyo");
+    await expect(page.locator(".widget-hint")).toContainText("every second");
+    await page.screenshot({ path: "output/decky-clock-widget.png" });
+    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+    // A widget draws its own face: no icon or image to choose.
+    await expect(page.locator(".icon-options button")).toHaveCount(0);
+    await expect(page.locator("input[type=file]")).toHaveCount(0);
+    await page.getByRole("button", { name: "Save key", exact: true }).click();
+    const clock = await page.evaluate(
+        async () => (await window.deck.getConfig()).pages[0].keys[11],
+    );
+    const face = clock.action.widget;
+    if (
+        clock.behavior !== "normal" ||
+        face?.type !== "clock" ||
+        face.style !== "analog" ||
+        !face.hour12 ||
+        !face.seconds ||
+        face.timeZone !== "Asia/Tokyo"
+    )
+        throw new Error(`Clock widget saved wrong: ${JSON.stringify(clock)}`);
+    // Seconds on: the deck gets a whole key picture every second.
+    const clockKey = page.getByRole("button", { name: "Key 12: Clock widget", exact: true });
+    await page.waitForFunction(
+        () =>
+            (window.__liveFrames ?? []).filter(
+                (frame) => frame.pageId === "home" && frame.cell === 11 && frame.bytes === 29028,
+            ).length >= 2,
+    );
+    const tick = await clockKey.locator("canvas").evaluate((canvas) => canvas.toDataURL());
+    await expect
+        .poll(() => clockKey.locator("canvas").evaluate((canvas) => canvas.toDataURL()))
+        .not.toBe(tick);
+    // Saved, the key is no longer new: nothing to go back to.
+    await expect(page.getByRole("button", { name: "Back to widgets", exact: true })).toHaveCount(0);
+    // A countdown whose time is set on the deck, with a swipe.
+    await page.getByRole("button", { name: "Key 13: Unassigned", exact: true }).click();
+    await page.locator(".widgets-entry").click();
+    await page
+        .getByRole("group", { name: "Widgets", exact: true })
+        .getByRole("button", { name: "Timer", exact: true })
+        .click();
+    await page
+        .getByRole("group", { name: "Mode", exact: true })
+        .getByRole("button", { name: "Countdown", exact: true })
+        .click();
+    await page.getByRole("switch", { name: "Set time on the deck", exact: true }).click();
+    await expect(page.locator(".widget-hint")).toContainText("Swipe up or down");
+    await page.getByRole("button", { name: "Save key", exact: true }).click();
+    const wheel = await page.evaluate(
+        async () => (await window.deck.getConfig()).pages[0].keys[12].action.widget,
+    );
+    if (wheel.type !== "timer" || wheel.mode !== "countdown" || wheel.adjustable !== true)
+        throw new Error(`Adjustable countdown saved wrong: ${JSON.stringify(wheel)}`);
+    await page.screenshot({ path: "output/decky-countdown-wheel.png" });
+    // Its sound is on unless switched off: it rings once it has run out, and
+    // stops when a tap sets it back.
+    await expect(
+        page.getByRole("switch", { name: "Sound when it ends", exact: true }),
+    ).toHaveAttribute("aria-checked", "true");
+    await page.evaluate(() =>
+        window.__setWidgetStates({
+            "home:12": { running: true, since: Date.now() - 301_000, elapsed: 0 },
+        }),
+    );
+    await page.waitForFunction(() => window.__playing === true);
+    if (!(await page.evaluate(() => window.__sound)).includes("kalimba"))
+        throw new Error("The countdown rang with the wrong sound");
+    await page.evaluate(() => window.__setWidgetStates({}));
+    await page.waitForFunction(() => window.__playing === false);
+    // A crypto price: its styles drawn side by side, then its coin. Prices are
+    // live, in dollars, with no currency to pick.
+    await page.getByRole("button", { name: "Key 14: Unassigned", exact: true }).click();
+    await page.locator(".widgets-entry").click();
+    await page
+        .getByRole("group", { name: "Widgets", exact: true })
+        .getByRole("button", { name: "Crypto", exact: true })
+        .click();
+    await expect(
+        page.getByRole("group", { name: "Style", exact: true }).locator("canvas"),
+    ).toHaveCount(2);
+    await expect(page.getByRole("group", { name: "Currency", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Ticker style", exact: true }).click();
+    await page.getByLabel("Coin", { exact: true }).selectOption("ethereum");
+    // Live, so there is no interval to pick either.
+    await expect(page.getByRole("group", { name: "Update every", exact: true })).toHaveCount(0);
+    await page.screenshot({ path: "output/decky-crypto-widget.png" });
+    await page.getByRole("button", { name: "Save key", exact: true }).click();
+    const crypto = await page.evaluate(
+        async () => (await window.deck.getConfig()).pages[0].keys[13].action.widget,
+    );
+    if (
+        crypto.type !== "crypto" ||
+        crypto.style !== "ticker" ||
+        crypto.coin !== "ethereum" ||
+        "currency" in crypto ||
+        "interval" in crypto
+    )
+        throw new Error(`Crypto widget saved wrong: ${JSON.stringify(crypto)}`);
     await page.getByRole("button", { name: "Key 4: Go live", exact: true }).click();
     await page.getByRole("button", { name: "Duplicate key", exact: true }).click();
     await page.getByRole("button", { name: "Key 7: Go live", exact: true }).waitFor();
@@ -844,7 +1009,7 @@ try {
     );
     if (errors.length) throw new Error(errors.join("\n"));
     console.error(
-        "UI checks passed: black defaults, sliding/recentering grid, six actions, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
+        "UI checks passed: black defaults, sliding/recentering grid, six actions, thirteen widgets, widget search by purpose, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
     );
 } finally {
     await browser.close();

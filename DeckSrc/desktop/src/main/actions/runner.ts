@@ -21,6 +21,7 @@ export class ActionRunner {
         this.controllers.add(controller);
         try {
             if (action.kind === "page") throw new Error("Page actions are handled by navigation.");
+            if (action.kind === "widget") throw new Error("Widgets handle their own presses.");
             for (const step of action.kind === "macro" ? action.steps : [action]) {
                 controller.signal.throwIfAborted();
                 await this.step(step, controller.signal);

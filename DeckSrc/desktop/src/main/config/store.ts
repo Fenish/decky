@@ -1,10 +1,11 @@
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { createConfig, validateConfig } from "../../shared/config";
+import { createConfig, retireWidgets, validateConfig } from "../../shared/config";
 import type { DeckConfig } from "../../shared/config";
 export async function loadConfig(path: string, legacyPath: string): Promise<DeckConfig> {
     try {
         const config: unknown = JSON.parse(await readFile(path, "utf8"));
+        retireWidgets(config);
         validateConfig(config);
         return config;
     } catch (error) {

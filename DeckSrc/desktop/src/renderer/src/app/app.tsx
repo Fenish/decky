@@ -30,6 +30,8 @@ export function App() {
                 <DisconnectedScreen
                     checking={deck.checking}
                     connected={deck.status.connected}
+                    booting={deck.booting}
+                    stuckPort={!deck.status.connected ? deck.status.stuckPort : undefined}
                     onEntered={deck.enteredDashboard}
                     reducedMotion={deck.config.reducedMotion}
                     unknownDevices={!deck.status.connected ? deck.status.unknownDevices : undefined}
@@ -44,6 +46,7 @@ export function App() {
                     busy={deck.busy}
                     pressedCell={deck.pressedCell}
                     keyStates={deck.keyStates}
+                    widgetStates={deck.widgetStates}
                     save={deck.save}
                     navigate={deck.navigate}
                     sync={deck.sync}

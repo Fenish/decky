@@ -62,7 +62,7 @@ function reassignAuto(action: Action, taken: string[]): Action {
         return { ...step, keys };
     };
     if (action.kind === "macro") return { ...action, steps: action.steps.map(fresh) };
-    return action.kind === "page" ? action : fresh(action);
+    return action.kind === "page" || action.kind === "widget" ? action : fresh(action);
 }
 export function duplicateKey(
     config: DeckConfig,

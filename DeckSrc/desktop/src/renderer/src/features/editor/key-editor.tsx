@@ -1,10 +1,15 @@
 import { useState } from "react";
-import { Check, Play, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, Play, Plus, Trash2, X } from "lucide-react";
 import type { Action, DeckPage, KeyConfig } from "../../../../shared/config";
 import { appearanceOf } from "../../../../shared/config";
 import { ArtworkPreview } from "../artwork/artwork-preview";
+import { WidgetPreview } from "../widgets/widget-preview";
+import { WidgetSettings } from "../widgets/widget-settings";
+import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets";
+import type { WidgetState } from "../../../../shared/widgets";
 import { AppearanceEditor } from "../artwork/appearance-editor";
 import { ActionPicker, ACTION_CHOICES } from "./action-picker";
+import type { PickerPanel } from "./action-picker";
 import { defaultAction } from "./actions";
 import { MacroEditor } from "./macro-editor";
 import { StepFields } from "./step-fields";
@@ -27,6 +32,10 @@ interface EditorProps {
     onTest: (value: KeyConfig) => Promise<void>;
     onRemove: () => Promise<void>;
     onError: (message: string) => void;
+    /** Undo the choice made in the picker: the key goes back to being new. */
+    onBack: () => void;
+    /** The selected key's running widget state, for its live preview. */
+    widgetState?: WidgetState;
 }
 export function KeyEditor({
     value,
@@ -45,8 +54,14 @@ export function KeyEditor({
     onTest,
     onRemove,
     onError,
+    onBack,
+    widgetState,
 }: EditorProps) {
     const [saving, setSaving] = useState(false);
+    const [panel, setPanel] = useState<PickerPanel>("actions");
+    // The picker panel an unsaved new key was chosen in: Back returns there.
+    const [pickedIn, setPickedIn] = useState<PickerPanel | null>(null);
+    const back = value && pickedIn && !assigned ? pickedIn : null;
     const appearanceState = previewOn ? "on" : "off";
     const setAppearanceState = (state: "off" | "on"): void => onPreviewOnChange(state === "on");
     const action = (next: Action): void => {
@@ -54,7 +69,8 @@ export function KeyEditor({
             onChange({
                 ...value,
                 action: next,
-                behavior: next.kind === "page" ? "normal" : value.behavior,
+                behavior:
+                    next.kind === "page" || next.kind === "widget" ? "normal" : value.behavior,
                 label:
                     next.kind === "program" && next.path && value.label === "Program"
                         ? (next.name ?? value.label).slice(0, 40)
@@ -75,9 +91,35 @@ export function KeyEditor({
     return (
         <section className="floating-editor" aria-label="Key editor">
             <header className="editor-heading">
+                {back && (
+                    <button
+                        className="editor-back"
+                        aria-label={back === "widgets" ? "Back to widgets" : "Back to actions"}
+                        title={back === "widgets" ? "Back to widgets" : "Back to actions"}
+                        onClick={() => {
+                            setPanel(back);
+                            setPickedIn(null);
+                            onBack();
+                        }}
+                    >
+                        <ChevronLeft size={20} />
+                    </button>
+                )}
                 <div className="editor-preview">
-                    {value && (
-                        <ArtworkPreview value={appearanceOf(value, appearanceState === "on")} />
+                    {value?.action.kind === "widget" ? (
+                        <WidgetPreview
+                            widget={value.action.widget}
+                            look={{
+                                background: value.background ?? "#000000",
+                                color: value.color,
+                                label: value.label,
+                            }}
+                            state={widgetState}
+                        />
+                    ) : (
+                        value && (
+                            <ArtworkPreview value={appearanceOf(value, appearanceState === "on")} />
+                        )
                     )}
                 </div>
                 {value ? (
@@ -103,8 +145,11 @@ export function KeyEditor({
             </header>
             {!value ? (
                 <ActionPicker
+                    panel={panel}
+                    onPanel={setPanel}
                     onSelect={(kind) => {
                         const choice = ACTION_CHOICES.find((c) => c.kind === kind)!;
+                        setPickedIn("actions");
                         onChange({
                             label: choice.label,
                             icon: choice.icon,
@@ -115,6 +160,17 @@ export function KeyEditor({
                                 pages.find((p) => p.id !== pageId)?.id ?? "home",
                                 reservedHotkeys,
                             ),
+                        });
+                    }}
+                    onWidget={(type) => {
+                        const choice = WIDGET_CHOICES.find((c) => c.type === type)!;
+                        setPickedIn("widgets");
+                        onChange({
+                            label: "",
+                            icon: choice.icon,
+                            color: "#eee8da",
+                            behavior: "normal",
+                            action: { kind: "widget", widget: defaultWidget(type) },
                         });
                     }}
                 />
@@ -136,7 +192,9 @@ export function KeyEditor({
                                 Normal
                             </button>
                             <button
-                                disabled={value.action.kind === "page"}
+                                disabled={
+                                    value.action.kind === "page" || value.action.kind === "widget"
+                                }
                                 className={value.behavior === "toggle" ? "active" : ""}
                                 onClick={() =>
                                     onChange({
@@ -157,7 +215,7 @@ export function KeyEditor({
                                 className={tab === "action" ? "active" : ""}
                                 onClick={() => onTab("action")}
                             >
-                                Action
+                                {value.action.kind === "widget" ? "Widget" : "Action"}
                             </button>
                             <button
                                 role="tab"
@@ -191,8 +249,19 @@ export function KeyEditor({
                                             {item.label}
                                         </option>
                                     ))}
+                                    <option value="widget">Widget</option>
                                 </select>
-                                {value.action.kind === "macro" ? (
+                                {value.action.kind === "widget" ? (
+                                    <WidgetSettings
+                                        widget={value.action.widget}
+                                        look={{
+                                            background: value.background ?? "#000000",
+                                            color: value.color,
+                                            label: value.label,
+                                        }}
+                                        onChange={(widget) => action({ kind: "widget", widget })}
+                                    />
+                                ) : value.action.kind === "macro" ? (
                                     <MacroEditor
                                         steps={value.action.steps}
                                         reservedHotkeys={reservedHotkeys}
@@ -254,6 +323,7 @@ export function KeyEditor({
                                 )}
                                 <AppearanceEditor
                                     showLabel={value.behavior === "toggle"}
+                                    widget={value.action.kind === "widget"}
                                     value={appearanceOf(value, appearanceState === "on")}
                                     onError={onError}
                                     change={(appearance) =>

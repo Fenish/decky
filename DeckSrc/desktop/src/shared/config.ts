@@ -1,4 +1,6 @@
 import { validProgramTarget } from "./programs";
+import { validWidget } from "./widgets";
+import type { Widget } from "./widgets";
 export const CELL_COUNT = 15;
 export const BACK_CELL = 10;
 export type Step =
@@ -12,7 +14,12 @@ export type Step =
     | { kind: "website"; url: string }
     | { kind: "script"; path: string; background?: boolean; wait?: boolean; timeoutMs?: number }
     | { kind: "delay"; ms: number };
-export type Action = Step | { kind: "macro"; steps: Step[] } | { kind: "page"; pageId: string };
+export type Action =
+    | Step
+    | { kind: "macro"; steps: Step[] }
+    | { kind: "page"; pageId: string }
+    /** A key whose picture keeps changing; see shared/widgets.ts. */
+    | { kind: "widget"; widget: Widget };
 export interface Artwork {
     source: string;
     zoom: number;
@@ -52,6 +59,12 @@ export function appearanceOf(key: KeyConfig, on = false): KeyAppearance {
 }
 export function displayedKey(key: KeyConfig | undefined, on: boolean): KeyConfig | undefined {
     return key ? { ...key, ...appearanceOf(key, on) } : undefined;
+}
+/** Whether a key is a widget; a nested page's Back key never is. */
+export function isWidgetKey(page: DeckPage, cell: number): boolean {
+    return (
+        page.keys[String(cell)]?.action.kind === "widget" && !(page.parentId && cell === BACK_CELL)
+    );
 }
 export interface DeckPage {
     id: string;
@@ -122,6 +135,30 @@ function validStep(v: unknown): v is Step {
             return false;
     }
 }
+/** Widgets Decky once had and no longer does. */
+const RETIRED_WIDGETS = new Set(["network"]);
+/**
+ * Drop what widgets no longer have, so a profile saved with it still loads:
+ * a retired widget's key empties; a crypto price's currency and interval go
+ * (prices are live, in dollars), and so does a microphone's style (there is
+ * one). Changes
+ * `value` in place and leaves the rest to validateConfig.
+ */
+export function retireWidgets(value: unknown): void {
+    if (!record(value) || !Array.isArray(value.pages)) return;
+    for (const page of value.pages) {
+        if (!record(page) || !record(page.keys)) continue;
+        for (const [cell, key] of Object.entries(page.keys)) {
+            const action = record(key) ? key.action : undefined;
+            if (!record(action) || action.kind !== "widget" || !record(action.widget)) continue;
+            if (RETIRED_WIDGETS.has(String(action.widget.type))) delete page.keys[cell];
+            else if (action.widget.type === "crypto") {
+                delete action.widget.currency;
+                delete action.widget.interval;
+            } else if (action.widget.type === "mic") delete action.widget.style;
+        }
+    }
+}
 export function validateConfig(value: unknown): asserts value is DeckConfig {
     if (
         !record(value) ||
@@ -185,6 +222,7 @@ export function validateConfig(value: unknown): asserts value is DeckConfig {
                 !(
                     validStep(action) ||
                     (action.kind === "page" && ids.has(String(action.pageId))) ||
+                    (action.kind === "widget" && validWidget(action.widget)) ||
                     (action.kind === "macro" &&
                         Array.isArray(action.steps) &&
                         action.steps.length > 0 &&
@@ -201,6 +239,8 @@ export function validateConfig(value: unknown): asserts value is DeckConfig {
                 throw new Error("Invalid button behavior.");
             if (key.behavior === "toggle" && key.action.kind === "page")
                 throw new Error("Page navigation uses normal buttons.");
+            if (key.behavior === "toggle" && key.action.kind === "widget")
+                throw new Error("Widgets use normal buttons.");
             for (const appearance of [
                 key,
                 ...(key.activeAppearance === undefined ? [] : [key.activeAppearance]),

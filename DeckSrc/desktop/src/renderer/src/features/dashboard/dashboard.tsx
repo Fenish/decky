@@ -17,6 +17,9 @@ import { hotkeysInUse } from "../../../../shared/hotkey-pool";
 import background from "../../assets/dashboard-obsidian.webp";
 import { Dialog } from "../../components/dialog";
 import { ArtworkPreview } from "../artwork/artwork-preview";
+import { WidgetPreview } from "../widgets/widget-preview";
+import { WIDGET_CHOICES } from "../../../../shared/widgets";
+import type { WidgetStates } from "../../../../shared/widgets";
 import { KeyEditor } from "../editor/key-editor";
 import type { EditorTab } from "../editor/key-editor";
 import { PagesPanel } from "./pages-panel";
@@ -29,6 +32,14 @@ interface Selection {
     dirty: boolean;
 }
 type PageDialog = { kind: "create" | "rename" | "delete"; page: DeckPage; forKey?: boolean };
+/** What a key is called to assistive technology: its label, or what it is. */
+function keyName(key: KeyConfig): string {
+    const { action } = key;
+    if (key.label.trim()) return key.label.trim();
+    if (action.kind !== "widget") return "Unlabelled action";
+    const choice = WIDGET_CHOICES.find((item) => item.type === action.widget.type);
+    return `${choice?.label ?? "Widget"} widget`;
+}
 interface DashboardProps {
     hidden: boolean;
     config: DeckConfig;
@@ -36,6 +47,7 @@ interface DashboardProps {
     busy: boolean;
     pressedCell: number | null;
     keyStates: KeyStates;
+    widgetStates: WidgetStates;
     save: (config: DeckConfig) => Promise<void>;
     navigate: (id: string) => Promise<void>;
     sync: () => Promise<void>;
@@ -59,6 +71,7 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
         busy,
         pressedCell,
         keyStates,
+        widgetStates,
         save,
         navigate,
         sync,
@@ -439,7 +452,7 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                                                 setDropCell(null);
                                             }
                                         }}
-                                        aria-label={`Key ${cell + 1}: ${back ? "Back" : key ? key.label.trim() || "Unlabelled action" : "Unassigned"}`}
+                                        aria-label={`Key ${cell + 1}: ${back ? "Back" : key ? keyName(key) : "Unassigned"}`}
                                         aria-pressed={selected}
                                         onClick={(event) => {
                                             if (key?.action.kind === "page") {
@@ -459,7 +472,17 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                                                 openPage(key.action.pageId);
                                         }}
                                     >
-                                        {key ? (
+                                        {key?.action.kind === "widget" ? (
+                                            <WidgetPreview
+                                                widget={key.action.widget}
+                                                look={{
+                                                    background: key.background ?? "#000000",
+                                                    color: key.color,
+                                                    label: key.label,
+                                                }}
+                                                state={widgetStates[keyAddress(page.id, cell)]}
+                                            />
+                                        ) : key ? (
                                             <ArtworkPreview value={key} />
                                         ) : back ? (
                                             <ArtworkPreview
@@ -538,6 +561,7 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                                       false)
                             }
                             onPreviewOnChange={setPreviewOn}
+                            widgetState={widgetStates[keyAddress(selection.pageId, selection.cell)]}
                             assigned={Boolean(
                                 config.pages.find((item) => item.id === selection.pageId)?.keys[
                                     selection.cell
@@ -569,6 +593,11 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                             }}
                             onRemove={deleteKey}
                             onError={notify}
+                            onBack={() =>
+                                setSelection((current) =>
+                                    current ? { ...current, value: null, dirty: false } : null,
+                                )
+                            }
                         />
                     ) : panel === "pages" ? (
                         <PagesPanel

@@ -70,7 +70,7 @@ try {
                       connected: true,
                       identity: {
                           portPath: "TEST",
-                          protocol: 1,
+                          protocol: window.__protocol ?? 1,
                           serial: "a4cb8fcdd274",
                           cells: 15,
                           columns: 5,
@@ -152,9 +152,31 @@ try {
     await page.evaluate(() => {
         window.__unknown = null;
     });
+    // Connected, the deck loads first: the screen says so, nothing opens and
+    // nothing is editable until its pages are in, then the reveal plays.
     await page.evaluate(() => {
+        window.__protocol = 3;
+        window.__holdLoading = true;
+        window.deck.cachePages = async () => {
+            if (window.__holdLoading)
+                await new Promise((resolve) => {
+                    window.__finishLoading = resolve;
+                });
+            return { ok: true, message: "Cached 1 pages." };
+        };
         window.__online = true;
         window.dispatchEvent(new Event("focus"));
+    });
+    await expect(page.getByRole("heading", { name: "Decky is starting", exact: true })).toBeVisible(
+        { timeout: 6000 },
+    );
+    await page.waitForTimeout(1500);
+    await expect(page.locator(".disconnected-screen")).toHaveAttribute("data-phase", "waiting");
+    await expect(page.locator(".app-shell")).not.toBeVisible();
+    await page.screenshot({ path: "output/decky-connect-booting.png" });
+    await page.evaluate(() => {
+        window.__holdLoading = false;
+        window.__finishLoading?.();
     });
     await page.locator(".disconnected-screen[data-phase=rotating]").waitFor();
     await expect(page.locator(".app-shell")).not.toBeVisible();
@@ -228,7 +250,7 @@ try {
     await expect(page.locator(".app-shell")).toBeVisible({ timeout: 1200 });
     if (errors.length) throw new Error(errors.join("\n"));
     console.error(
-        `Connection checks passed: ${interval} ms automatic retry, no buttons/sidebar, turn → center-key zoom → dashboard, interrupted transition, preserved draft, responsive sizes, reduced motion.`,
+        `Connection checks passed: ${interval} ms automatic retry, no buttons/sidebar, loading first, then turn → center-key zoom → dashboard, interrupted transition, preserved draft, responsive sizes, reduced motion.`,
     );
 } finally {
     await browser.close();

@@ -2,7 +2,17 @@ import { displayedKey, keyAddress } from "../../../../shared/config";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { KeyIcon } from "../../components/key-icon";
-import type { Artwork, DeckPage, KeyAppearance, KeyStates } from "../../../../shared/config";
+import type {
+    Action,
+    Artwork,
+    DeckPage,
+    KeyAppearance,
+    KeyStates,
+} from "../../../../shared/config";
+import type { Widget, WidgetState } from "../../../../shared/widgets";
+import { encodeSlide, SLIDE_FEEL } from "../../../../shared/slide-spec";
+import type { SlideLine } from "../../../../shared/slide-spec";
+import { drawWidget } from "../widgets/draw-widget";
 export async function loadImage(source: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -59,7 +69,7 @@ export function drawArtwork(
     ctx.restore();
 }
 export async function renderKey(
-    key: KeyAppearance | undefined,
+    key: (KeyAppearance & { action?: Action }) | undefined,
     w: number,
     h: number,
     back = false,
@@ -68,6 +78,13 @@ export async function renderKey(
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d")!;
+    // A widget's page picture is its base: settings only, never the time, so
+    // the page's checksum holds from one launch to the next. The live parts
+    // follow as LIVE patches.
+    if (key?.action?.kind === "widget" && !back) {
+        drawWidget(ctx, key.action.widget, widgetLook(key), w, h);
+        return canvas;
+    }
     ctx.fillStyle = key?.background ?? "#000000";
     ctx.fillRect(0, 0, w, h);
     if (!key && !back) return canvas;
@@ -102,6 +119,63 @@ export async function renderKey(
     if (hasLabel) ctx.fillText(back ? "Back" : (key?.label ?? ""), w / 2, labelY, w * 0.9);
     return canvas;
 }
+function widgetLook(key: KeyAppearance): { background: string; color: string; label: string } {
+    return { background: key.background ?? "#000000", color: key.color, label: key.label };
+}
+
+/** A canvas as the deck's RGB565, little-endian. */
+export function toRgb565(canvas: HTMLCanvasElement, width: number, height: number): Uint8Array {
+    const pixels = canvas.getContext("2d")!.getImageData(0, 0, width, height).data;
+    const bytes = new Uint8Array(width * height * 2);
+    for (let i = 0; i < width * height; i++) {
+        const rgb =
+            ((pixels[i * 4]! >> 3) << 11) |
+            ((pixels[i * 4 + 1]! >> 2) << 5) |
+            (pixels[i * 4 + 2]! >> 3);
+        bytes[i * 2] = rgb & 255;
+        bytes[i * 2 + 1] = rgb >> 8;
+    }
+    return bytes;
+}
+
+/** A widget key as it looks now, for a LIVE update. */
+export function widgetFrame(
+    key: KeyAppearance,
+    widget: Widget,
+    state: WidgetState | undefined,
+    now: number,
+    width: number,
+    height: number,
+): Uint8Array {
+    return widgetParts(key, widget, state, now, width, height, false).frame;
+}
+
+/**
+ * A widget key as it looks now, and - where the deck slides text along
+ * (`slides`) - its text too long for the key, which the picture leaves out:
+ * the SLIDE payload, or null for none.
+ */
+export function widgetParts(
+    key: KeyAppearance,
+    widget: Widget,
+    state: WidgetState | undefined,
+    now: number,
+    width: number,
+    height: number,
+    slides: boolean,
+): { frame: Uint8Array; slide: Uint8Array | null } {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const lines: SlideLine[] | undefined = slides ? [] : undefined;
+    const ctx = canvas.getContext("2d")!;
+    drawWidget(ctx, widget, widgetLook(key), width, height, { state, now, slides: lines });
+    return {
+        frame: toRgb565(canvas, width, height),
+        slide: lines?.length ? encodeSlide({ feel: SLIDE_FEEL, lines }) : null,
+    };
+}
+
 export async function pageFrames(
     page: DeckPage,
     width: number,
@@ -116,17 +190,7 @@ export async function pageFrames(
                 height,
                 cell === 10 && page.parentId !== null,
             );
-            const pixels = canvas.getContext("2d")!.getImageData(0, 0, width, height).data;
-            const bytes = new Uint8Array(width * height * 2);
-            for (let i = 0; i < width * height; i++) {
-                const rgb =
-                    ((pixels[i * 4]! >> 3) << 11) |
-                    ((pixels[i * 4 + 1]! >> 2) << 5) |
-                    (pixels[i * 4 + 2]! >> 3);
-                bytes[i * 2] = rgb & 255;
-                bytes[i * 2 + 1] = rgb >> 8;
-            }
-            return bytes;
+            return toRgb565(canvas, width, height);
         }),
     );
 }

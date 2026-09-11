@@ -20,7 +20,7 @@ const api: DeckApi = {
     wifiScan: () => ipcRenderer.invoke("wifi:scan"),
     wifiJoin: (ssid, password) => ipcRenderer.invoke("wifi:join", ssid, password),
     wifiForget: () => ipcRenderer.invoke("wifi:forget"),
-    cachePages: (pages) => ipcRenderer.invoke("pages:cache", pages),
+    cachePages: (pages, warmup) => ipcRenderer.invoke("pages:cache", pages, warmup),
     moveKey: (from, to) => ipcRenderer.invoke("keys:move", from, to),
     duplicateKey: (from) => ipcRenderer.invoke("keys:duplicate", from),
     listPrograms: () => ipcRenderer.invoke("programs:list"),
@@ -31,6 +31,12 @@ const api: DeckApi = {
     status: () => ipcRenderer.invoke("deck:status"),
     getKeyStates: () => ipcRenderer.invoke("keys:states"),
     onKeyStates: (handler) => listen("keys:states", handler),
+    widgetStates: () => ipcRenderer.invoke("widgets:states"),
+    onWidgetStates: (handler) => listen("widgets:states", handler),
+    liveKey: (page, cell, frame, slide) =>
+        ipcRenderer.invoke("deck:live", page, cell, frame, slide),
+    wheelKey: (page, cell, spec, values, index) =>
+        ipcRenderer.invoke("deck:wheel", page, cell, spec, values, index),
     getConfig: () => ipcRenderer.invoke("config:get"),
     saveConfig: (config) => ipcRenderer.invoke("config:save", config),
     pickTarget: (kind) => ipcRenderer.invoke("target:pick", kind),
