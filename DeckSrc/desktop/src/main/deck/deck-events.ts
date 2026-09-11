@@ -2,7 +2,8 @@ import { isWidgetKey } from "../../shared/config";
 import type { DeckEvent } from "../../shared/api";
 import type { Lifecycle } from "../app/lifecycle";
 import type { MainWindow } from "../app/main-window";
-import type { DeckLog } from "../logging/deck-log";
+import type { RichPresence } from "../discord/presence";
+import type { LogFile } from "../logging/log-file";
 import type { DeckPages } from "../pages/deck-pages";
 import type { PageSync } from "../pages/page-sync";
 import type { Profile } from "../profile/profile";
@@ -14,7 +15,7 @@ import type { DeckSession } from "./session";
 export interface DeckEventParts {
     lifecycle: Lifecycle;
     window: MainWindow;
-    log: DeckLog;
+    log: LogFile;
     session: DeckSession;
     profile: Profile;
     pages: DeckPages;
@@ -22,6 +23,7 @@ export interface DeckEventParts {
     wheels: DeckWheels;
     presses: WidgetPresses;
     workspace: Workspace;
+    presence: RichPresence;
 }
 
 /**
@@ -30,7 +32,7 @@ export interface DeckEventParts {
  */
 export function deckEventHandler(parts: DeckEventParts): (event: DeckEvent) => void {
     const { lifecycle, window, log, session, profile, pages, pageSync } = parts;
-    const { wheels, presses, workspace } = parts;
+    const { wheels, presses, workspace, presence } = parts;
     const forward = (event: DeckEvent): void => window.send("deck:event", event);
     const handlers: { [K in DeckEvent["kind"]]: (event: Extract<DeckEvent, { kind: K }>) => void } =
         {
@@ -43,7 +45,7 @@ export function deckEventHandler(parts: DeckEventParts): (event: DeckEvent) => v
                 if (pages.deviceReady) wheels.wheelSettled(event.cell, event.index);
             },
             value: (event) => {
-                if (pages.deviceReady) wheels.dialTurned(event.cell, event.value);
+                if (pages.deviceReady) presses.widgetTurned(event.cell, event.value);
             },
             move: (event) => {
                 if (pages.deviceReady) presses.widgetMove(event.cell, event.y);
@@ -53,6 +55,8 @@ export function deckEventHandler(parts: DeckEventParts): (event: DeckEvent) => v
                 const { status } = session;
                 if (!pages.deviceReady && !(status.connected && status.identity.protocol < 2))
                     return;
+                // Every press counts, for Decky's card on Discord.
+                if (event.down) presence.press();
                 const { config } = profile;
                 const page =
                     status.connected && status.identity.protocol < 2

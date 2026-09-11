@@ -60,6 +60,7 @@ export class Updates {
     // Disconnected, until the new version connects. Firmware without the command
     // answers ERR, which changes nothing.
     private deckPercent = -1;
+    private installing: "deck" | "app" | null = null;
 
     constructor(
         private readonly session: DeckSession,
@@ -67,6 +68,11 @@ export class Updates {
         private readonly window: MainWindow,
         private readonly lifecycle: Lifecycle,
     ) {}
+
+    /** What is being updated now: the deck's firmware, or Decky itself. */
+    get updating(): "deck" | "app" | null {
+        return this.installing;
+    }
 
     async firmwareInfo(): Promise<FirmwareInfo> {
         const bundled = await bundledManifest(bundledFirmwareFolder());
@@ -196,6 +202,7 @@ export class Updates {
             await session.link.close();
             session.status = { connected: false };
             this.pageSync.resetDeviceCache();
+            this.installing = "deck";
             try {
                 await flashFirmware(
                     target,
@@ -212,6 +219,7 @@ export class Updates {
                     message: `Firmware was not installed: ${error instanceof Error ? error.message : String(error)}`,
                 };
             } finally {
+                this.installing = null;
                 this.confirmedCrowPanels.delete(target);
                 session.forgetSilentPort(target);
             }
@@ -225,6 +233,7 @@ export class Updates {
     /** Update Decky itself, showing each stage in the window and on the deck. */
     installApp(): Promise<void> {
         this.deckPercent = -1;
+        this.installing = "app";
         return installAppUpdate(
             (progress: AppUpdateProgress) => {
                 this.window.sendIfOpen("app-update:progress", progress);
@@ -237,7 +246,10 @@ export class Updates {
                 this.lifecycle.quitting = true;
                 this.lifecycle.restartingForUpdate = true;
             },
-        );
+        ).catch((error: unknown) => {
+            this.installing = null;
+            throw error;
+        });
     }
 
     /** Open the newest installer's download in the browser. */
@@ -271,8 +283,14 @@ export class Updates {
             }
         },
         installing: () => this.tellDeck("UPDATING 100"),
-        failed: () => this.tellDeck("UPDATING END"),
-        cancelled: () => this.tellDeck("UPDATING END"),
+        failed: () => {
+            this.installing = null;
+            this.tellDeck("UPDATING END");
+        },
+        cancelled: () => {
+            this.installing = null;
+            this.tellDeck("UPDATING END");
+        },
     };
 
     private tellDeck(line: string): void {

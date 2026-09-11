@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Download, RefreshCw, Upload, X } from "lucide-react";
 import type { DeckConfig } from "../../../../shared/config";
+import { DiscordSettings } from "./discord-settings";
 import { WifiSettings } from "./wifi-settings";
 import { FirmwareSettings } from "./firmware-settings";
 export function SettingsPanel({
@@ -85,6 +86,7 @@ export function SettingsPanel({
                         <span />
                     </button>
                 </div>
+                <DiscordSettings notify={notify} />
                 <div className="settings-actions">
                     <button
                         onClick={() =>
