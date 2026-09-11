@@ -2,7 +2,9 @@
  * A widget's view: everything about one widget type that the renderer
  * does - how its key is drawn, its settings, the readings its style tiles
  * make up, and the look the deck turns. Each type has its folder beside this
- * file, and registry.ts names them all. What a widget is and what a press
+ * file, and registry.ts names them all. Types that look alike share one
+ * folder, whose view is made for each by a function the registry calls:
+ * level/ for the volume and the microphone. What a widget is and what a press
  * does to it is its kind's (src/shared/widgets/).
  *--------------------------------------------------------------*/
 
@@ -48,7 +50,8 @@ export interface DeckLook<W extends Widget> {
  * type's settings draw style tiles through drawWidget, which asks the
  * registry for that type's view - so a view can be made before a module it
  * names has run. It names only functions declared with `function`, which are
- * there from the start, never another module's const; and only registry.ts
+ * there from the start, never another module's const; a view made by a
+ * function reads its module's consts only as it draws. Only registry.ts
  * imports the views.
  */
 export interface WidgetView<W extends Widget> {
@@ -70,6 +73,13 @@ export interface WidgetView<W extends Widget> {
     settings?(props: SettingsProps<W>): ReactNode;
     /** What the panel says under its fields; absent or empty for nothing. */
     hint?(widget: W): string;
+    /**
+     * Its own looks, in the key's Appearance tab (a voice channel's layout);
+     * called there, so it must not use hooks.
+     */
+    appearance?(props: SettingsProps<W>): ReactNode;
+    /** Whether it draws the key's icon, when it has nothing else to show: Appearance picks it. */
+    icon?: boolean;
     /** Readings made up for its style tiles, for widgets that read something. */
     sample?(now: number): WidgetState;
     /** Its look on the deck, for a key the deck turns by itself. */

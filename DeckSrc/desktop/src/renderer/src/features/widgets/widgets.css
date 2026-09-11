@@ -7,6 +7,13 @@
 .widget-settings .field {
     margin-bottom: 0;
 }
+/* A widget's own looks, in the Appearance tab: spaced from the colours under them as a field is. */
+.widget-looks {
+    margin-bottom: 20px;
+}
+.widget-looks .script-mode {
+    padding-top: 2px;
+}
 .widget-settings textarea {
     min-height: 72px;
     resize: vertical;
@@ -65,9 +72,8 @@
     line-height: 1.5;
     color: #a29f94;
 }
-/* The new-key picker's second group. */
-/* The picker's way into its widgets panel, below the actions. */
-.widgets-entry {
+/* A picker row that opens a panel one step in: Widgets, Apps, an app's page. */
+.picker-entry {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -83,17 +89,17 @@
     text-align: left;
     box-shadow: inset 0 1px 0 #fff3d311;
 }
-.widgets-entry:hover {
+.picker-entry:hover {
     background: #29261b;
     border-color: #d4c29a;
 }
-.widgets-entry span {
+.picker-entry span {
     display: flex;
     flex-direction: column;
     gap: 2px;
     flex: 1;
 }
-.widgets-entry small {
+.picker-entry small {
     font-size: 11px;
     color: #8f8a7e;
 }
@@ -102,6 +108,34 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 16px;
+}
+/* A voice channel's ID, with the button that takes the one you are in beside it. */
+.channel-pick {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+.channel-pick .field {
+    flex: 1;
+    min-width: 0;
+}
+.channel-pick .button {
+    flex: none;
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.channel-name {
+    margin: -6px 2px 0;
+    color: #b7ae9b;
+    font-size: 12px;
+}
+/* Between an app's connection and its keys. */
+.picker-divider {
+    margin: 14px 2px;
+    border: 0;
+    border-top: 1px solid #514d4170;
 }
 .picker-heading h3 {
     font-size: 15px;

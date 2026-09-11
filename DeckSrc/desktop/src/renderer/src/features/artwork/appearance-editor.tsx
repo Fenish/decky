@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import { ImagePlus, RotateCcw, X } from "lucide-react";
+import { ICON_SIZES } from "../../../../shared/config";
 import type { KeyAppearance } from "../../../../shared/config";
 import { IconPicker } from "./icon-picker";
 import { ArtworkPreview } from "./artwork-preview";
@@ -9,14 +11,22 @@ export function AppearanceEditor({
     onError,
     showLabel = true,
     widget = false,
+    widgetIcon = false,
+    widgetOptions,
 }: {
     value: KeyAppearance;
     change: (value: KeyAppearance) => void;
     onError: (message: string) => void;
     showLabel?: boolean;
-    /** A widget draws itself: only its colours apply, not an icon or an image. */
+    /** A widget draws itself: only its colours apply, not an image. */
     widget?: boolean;
+    /** A widget that draws the key's icon (a voice channel with no one in): its icon and size too. */
+    widgetIcon?: boolean;
+    /** A widget's own looks (a voice channel's layout), above the colours. */
+    widgetOptions?: ReactNode;
 }) {
+    // The icon shows - no image in its place - on a key, or a widget that draws it.
+    const iconShown = (!widget || widgetIcon) && !value.artwork;
     return (
         <>
             {showLabel && (
@@ -173,6 +183,29 @@ export function AppearanceEditor({
                     )}
                 </>
             )}
+            {iconShown && (
+                <label className="slider-field">
+                    <span>
+                        Icon size
+                        <span className="slider-value">{value.iconSize ?? ICON_SIZES.usual}%</span>
+                    </span>
+                    <input
+                        type="range"
+                        aria-label="Icon size"
+                        min={ICON_SIZES.min}
+                        max={ICON_SIZES.max}
+                        step={5}
+                        value={value.iconSize ?? ICON_SIZES.usual}
+                        onChange={(event) => {
+                            const size = Number(event.target.value);
+                            // The usual size is no setting at all.
+                            const { iconSize: _size, ...rest } = value;
+                            change(size === ICON_SIZES.usual ? rest : { ...value, iconSize: size });
+                        }}
+                    />
+                </label>
+            )}
+            {widgetOptions && <div className="widget-settings widget-looks">{widgetOptions}</div>}
             <label className="field">
                 Background
                 <div className="background-color-control">
@@ -214,7 +247,7 @@ export function AppearanceEditor({
                     />
                 </div>
             </label>
-            {!widget && (
+            {(!widget || widgetIcon) && (
                 <div className="field">
                     Icon
                     <IconPicker

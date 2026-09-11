@@ -1,12 +1,25 @@
 import { useEffect, useRef } from "react";
 import type { KeyAppearance } from "../../../../shared/config";
 import { renderKey } from "./artwork";
-export function ArtworkPreview({ value }: { value: KeyAppearance }) {
+/** A key's picture as the deck shows it; `disabled` while the app it controls is out of reach. */
+export function ArtworkPreview({
+    value,
+    disabled = false,
+}: {
+    value: KeyAppearance;
+    disabled?: boolean;
+}) {
     const ref = useRef<HTMLCanvasElement>(null);
-    const { label, icon, color, background, labelGap, artwork } = value;
+    const { label, icon, color, background, labelGap, iconSize, artwork } = value;
     useEffect(() => {
         let live = true;
-        void renderKey({ label, icon, color, background, labelGap, artwork }, 240, 240)
+        void renderKey(
+            { label, icon, color, background, labelGap, iconSize, artwork },
+            240,
+            240,
+            false,
+            disabled,
+        )
             .then((canvas) => {
                 if (live) {
                     const context = ref.current?.getContext("2d");
@@ -18,7 +31,7 @@ export function ArtworkPreview({ value }: { value: KeyAppearance }) {
         return () => {
             live = false;
         };
-    }, [label, icon, color, background, labelGap, artwork]);
+    }, [label, icon, color, background, labelGap, iconSize, artwork, disabled]);
     return (
         <canvas
             ref={ref}

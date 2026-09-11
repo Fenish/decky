@@ -227,6 +227,7 @@
     top: 7px;
     font-size: 7px;
     letter-spacing: 0.8px;
+    text-transform: uppercase;
     color: #747065;
 }
 .key-state.on {
@@ -756,6 +757,79 @@
     font-size: 13px;
     color: #d5cbb5;
 }
+/* Under Reduce motion: Decky on Discord, a switch and the card friends see. */
+.discord-settings {
+    padding: 18px 0 22px;
+    border-bottom: 1px solid #5c523950;
+}
+.discord-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    font-size: 13px;
+    color: #d5cbb5;
+}
+.discord-row p,
+.presence-note {
+    margin: 5px 0 0;
+    color: #b7ae9b;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.discord-row .toggle {
+    flex: none;
+}
+.presence-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid #ffffff12;
+    border-radius: 10px;
+    background: #0b0b0c;
+}
+.presence-art {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    border-radius: 12px;
+    background: linear-gradient(150deg, #1c1c1f, #0d0d0f);
+    box-shadow: inset 0 0 0 1px #ffffff14;
+}
+.presence-art svg {
+    width: 30px;
+    height: 30px;
+}
+.presence-lines {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 1px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: #c9c2b3;
+}
+.presence-lines small {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8f8a7e;
+}
+.presence-lines strong {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1ece2;
+}
+.presence-lines span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 /* Under Reduce motion, above Wireless and Firmware: the everyday profile actions. */
 .settings-actions {
     display: flex;
@@ -1192,21 +1266,212 @@
     object-fit: fill;
     pointer-events: none;
 }
-.settings-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #605740 transparent; }
-.wifi-settings { margin-top: 22px; border-bottom: 1px solid #5c523950; padding-bottom: 22px; }
-.wifi-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.wifi-heading h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 600; }
-.wifi-heading > span { color: #b7ae9b; font-size: 11px; }
-.wifi-help, .wifi-message { color: #b7ae9b; line-height: 1.5; font-size: 12px; margin: 12px 0; }
-.wifi-message { color: #eee8da; }
-.wifi-wide { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; white-space: normal; overflow-wrap: anywhere; }
-.wifi-networks { max-height: 165px; overflow: auto; scrollbar-width: thin; border: 1px solid #514d4170; border-radius: 10px; margin-top: 12px; }
-.wifi-networks > button { width: 100%; display: flex; gap: 8px; align-items: center; text-align: left; padding: 12px 10px; font-size: 12px; border-bottom: 1px solid #514d4135; }
-.wifi-networks > button[aria-selected="true"] { background: #eee8da18; color: #f3e6c5; }
-.wifi-networks > button:hover:not(:disabled) { background: #eee8da10; }
-.wifi-networks > button > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wifi-networks small { color: #b7ae9b; font-size: 10px; }
-.wifi-networks svg { flex-shrink: 0; }
-.wifi-settings form { margin-top: 16px; }
-.wifi-connected { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; font-size: 12px; color: #c9d3ad; margin: 12px 0; }
-.wifi-connected strong { overflow-wrap: anywhere; }
+.settings-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #605740 transparent;
+}
+.wifi-settings {
+    margin-top: 22px;
+    border-bottom: 1px solid #5c523950;
+    padding-bottom: 22px;
+}
+.wifi-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.wifi-heading h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+.wifi-heading > span {
+    color: #b7ae9b;
+    font-size: 11px;
+}
+.wifi-help,
+.wifi-message {
+    color: #b7ae9b;
+    line-height: 1.5;
+    font-size: 12px;
+    margin: 12px 0;
+}
+.wifi-message {
+    color: #eee8da;
+}
+.wifi-wide {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.wifi-networks {
+    max-height: 165px;
+    overflow: auto;
+    scrollbar-width: thin;
+    border: 1px solid #514d4170;
+    border-radius: 10px;
+    margin-top: 12px;
+}
+.wifi-networks > button {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    text-align: left;
+    padding: 12px 10px;
+    font-size: 12px;
+    border-bottom: 1px solid #514d4135;
+}
+.wifi-networks > button[aria-selected="true"] {
+    background: #eee8da18;
+    color: #f3e6c5;
+}
+.wifi-networks > button:hover:not(:disabled) {
+    background: #eee8da10;
+}
+.wifi-networks > button > span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.wifi-networks small {
+    color: #b7ae9b;
+    font-size: 10px;
+}
+.wifi-networks svg {
+    flex-shrink: 0;
+}
+.wifi-settings form {
+    margin-top: 16px;
+}
+.wifi-connected {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    font-size: 12px;
+    color: #c9d3ad;
+    margin: 12px 0;
+}
+.wifi-connected strong {
+    overflow-wrap: anywhere;
+}
+/* An app's connection in one line (shared/integrations): on its picker page, in its keys' editor. */
+.app-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 7px 7px 7px 12px;
+    border: 1px solid #514d4170;
+    border-radius: 10px;
+}
+.app-card .app-status {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    align-items: center;
+}
+.app-card .app-status::before {
+    margin-top: 0;
+}
+.app-card .app-status span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.app-connect,
+.app-gear {
+    flex: none;
+    min-height: 32px;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+/* The small settings button beside one that starts or gets the app. */
+.app-gear {
+    width: 32px;
+    padding: 0;
+    color: #b7ae9b;
+}
+.app-gear:hover:not(:disabled) {
+    color: #eee8da;
+}
+/* Why the app could not be started, under the line. */
+.app-note {
+    flex-basis: 100%;
+    margin: 0 0 3px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #eee8da;
+}
+/* Its settings, in a dialog. */
+.app-form {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+.app-clear {
+    justify-self: start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #b7ae9b;
+    font-size: 11px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.app-clear:hover:not(:disabled) {
+    color: #eee8da;
+}
+.app-help {
+    color: #b7ae9b;
+    line-height: 1.5;
+    font-size: 12px;
+    margin: 2px 0 0;
+}
+.app-message {
+    color: #eee8da;
+}
+/* How Decky stands with an app, its dot in the standing's colour. */
+.app-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #b7ae9b;
+    margin: 10px 0 0;
+}
+.app-status::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: var(--app-dot, #8b8a86);
+}
+.app-status[data-health="ready"] {
+    color: #c9d3ad;
+    --app-dot: #7fd49a;
+}
+.app-status[data-health="off"],
+.app-status[data-health="denied"] {
+    --app-dot: #f2c46d;
+}
+.app-status[data-health="missing"] {
+    --app-dot: #ff7a6e;
+}

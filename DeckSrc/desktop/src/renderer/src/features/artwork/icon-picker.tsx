@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { BRAND_DEFAULTS } from "../../components/brand-icons";
 import { ICON_NAMES, KeyIcon, iconLabel, iconName } from "../../components/key-icon";
 const DEFAULT_ICONS = [
     "Keyboard",
@@ -27,6 +28,7 @@ const DEFAULT_ICONS = [
     "House",
     "ArrowLeft",
     "Zap",
+    ...BRAND_DEFAULTS,
 ];
 export function IconPicker({
     value,
@@ -51,7 +53,7 @@ export function IconPicker({
             <label className="icon-search">
                 <Search size={15} />
                 <input
-                    aria-label="Search Lucide icons"
+                    aria-label="Search icons"
                     placeholder="Search icons…"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}

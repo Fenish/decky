@@ -1,4 +1,6 @@
 import type { SlideLine } from "../../../../shared/slide-spec";
+import type { SweepArc } from "../../../../shared/sweep-spec";
+import type { KeyAppearance } from "../../../../shared/config";
 import type { Widget, WidgetState } from "../../../../shared/widgets";
 import { fade, FONT } from "./canvas-kit";
 import type { Area } from "./canvas-kit";
@@ -9,6 +11,20 @@ export interface WidgetLook {
     background: string;
     color: string;
     label: string;
+    /** The key's icon and its size (%), for a widget that draws it: a voice channel with no one in. */
+    icon?: string;
+    iconSize?: number;
+}
+
+/** A widget key's look, from its appearance. */
+export function widgetLook(key: KeyAppearance): WidgetLook {
+    return {
+        background: key.background ?? "#000000",
+        color: key.color,
+        label: key.label,
+        icon: key.icon,
+        ...(key.iconSize !== undefined ? { iconSize: key.iconSize } : {}),
+    };
 }
 
 /** What only a running widget knows. Absent, the widget draws its base picture. */
@@ -21,6 +37,12 @@ export interface WidgetMoment {
      * short with an ellipsis.
      */
     slides?: SlideLine[];
+    /**
+     * Where the deck moves rings' arcs itself (sweep=1): a ring's arc goes
+     * here instead of onto the picture (sweepArc). Without it, it is painted
+     * as it is now.
+     */
+    sweeps?: SweepArc[];
 }
 
 /**
