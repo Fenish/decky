@@ -11,7 +11,7 @@ export function warmupItems(
     warmup: unknown,
     status: DeckStatus,
     config: DeckConfig,
-    validSlide: (slide: unknown) => boolean,
+    validOverlays: (overlays: unknown) => boolean,
 ): Warmup {
     const none: Warmup = { widgets: [], looks: [] };
     if (!status.connected || !status.identity.warm || typeof warmup !== "object" || !warmup)
@@ -31,11 +31,12 @@ export function warmupItems(
                     isWidgetKey(page, item.cell) &&
                     item.frame instanceof Uint8Array &&
                     item.frame.length === bytes &&
-                    validSlide(item.slide)
+                    validOverlays(item.overlays)
                 );
             },
         ),
-        looks: (Array.isArray(looks) ? looks.slice(0, 32) : []).filter(
+        // The page shown sends its looks last: past 32, the first go.
+        looks: (Array.isArray(looks) ? looks.slice(-32) : []).filter(
             (item): item is Warmup["looks"][number] =>
                 !!pageOf(item?.pageId) &&
                 item.spec instanceof Uint8Array &&

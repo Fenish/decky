@@ -185,6 +185,11 @@ export class HotkeySender {
         }
     }
 
+    /** Start the helper ahead of the first press, which would wait for it. */
+    start(): void {
+        this.ensureHelper();
+    }
+
     /** Shut the helper down. Safe to call when it was never started. */
     stop(): void {
         this.helper?.stdin.end();
