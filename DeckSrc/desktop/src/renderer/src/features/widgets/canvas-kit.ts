@@ -3,6 +3,9 @@
  * and a few Lucide icons (ISC licence) drawn as their own paths.
  *--------------------------------------------------------------*/
 
+import { sweepFits, sweepShare } from "../../../../shared/sweep-spec";
+import type { SweepArc, SweepMotion } from "../../../../shared/sweep-spec";
+
 export const FONT = '"Segoe UI Variable Display", "Segoe UI", sans-serif';
 /** Good, warning and bad; a second hue beside the key's accent. */
 export const UP = "#7fd49a";
@@ -121,8 +124,44 @@ const ICONS: Record<string, string[]> = {
         "M6 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z",
     ],
     play: ["M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"],
+    users: [
+        "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2",
+        "M13 7a4 4 0 1 1-8 0 4 4 0 1 1 8 0z",
+        "M22 21v-2a4 4 0 0 0-3-3.87",
+        "M16 3.13a4 4 0 0 1 0 7.75",
+    ],
 };
 export type IconName = keyof typeof ICONS;
+
+/**
+ * The mark of a key whose app is out of reach: a grey slash from top left to
+ * bottom right through (x, y), `reach` out each way, cut from what is under it
+ * by a gap `gap` times its width in `ground` - as a muted icon's is.
+ */
+export function strike(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    reach: number,
+    stroke: number,
+    ground: string,
+    gap = 2.8,
+): void {
+    ctx.save();
+    ctx.lineCap = "round";
+    for (const [color, width] of [
+        [ground, stroke * gap],
+        [fade(GREY, 0.75), stroke],
+    ] as const) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(x - reach, y - reach);
+        ctx.lineTo(x + reach, y + reach);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
 
 /** A Lucide icon, `size` pixels square, centred on (x, y): stroked, or filled. */
 export function icon(
@@ -191,15 +230,56 @@ export function sparkline(
     ctx.restore();
 }
 
-/** A ring's track and its arc from the top, clockwise, to `share` (0-1). */
+/**
+ * Where a drawing's rings' arcs go: `sweeps` where the deck moves them itself
+ * (sweep=1), else onto the picture as they are at `now`.
+ */
+export interface ArcSink {
+    now: number;
+    sweeps?: SweepArc[];
+}
+
+/**
+ * A ring's arc from the top, clockwise, to where its motion has its end. Where
+ * the deck moves arcs itself and takes this one, it goes to the deck (one a
+ * key) and the picture keeps only the track: the deck moves it smoothly while
+ * the digits under it change once a second. Else it is painted as it is now.
+ */
+export function sweepArc(ctx: CanvasRenderingContext2D, arc: SweepArc, sink?: ArcSink): void {
+    if (sink?.sweeps?.length === 0 && sweepFits(arc, ctx.canvas.width, ctx.canvas.height))
+        sink.sweeps.push(arc);
+    else paintArc(ctx, arc, sink?.now ?? 0);
+}
+
+/** An arc painted as the deck strokes it, at `now`: round ends, its glow a shadow. */
+export function paintArc(ctx: CanvasRenderingContext2D, arc: SweepArc, now: number): void {
+    const share = sweepShare(arc.motion, now);
+    if (share <= 0) return;
+    ctx.save();
+    ctx.lineWidth = arc.width;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = fade(arc.color, arc.alpha);
+    if (arc.glow > 0) {
+        // A shadow is about half its colour at the stroke's edge.
+        ctx.shadowColor = fade(arc.color, Math.min(1, arc.glow * 2) * arc.alpha);
+        ctx.shadowBlur = Math.max(0, arc.reach - 1);
+    }
+    ctx.beginPath();
+    ctx.arc(arc.x, arc.y, arc.r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * share);
+    ctx.stroke();
+    ctx.restore();
+}
+
+/** A ring's track, and its glowing arc from the top, clockwise, to where `motion` has it (sweepArc). */
 export function ring(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     r: number,
     width: number,
-    share: number,
+    motion: SweepMotion,
     color: string,
+    sink?: ArcSink,
 ): void {
     ctx.save();
     ctx.lineWidth = width;
@@ -208,41 +288,36 @@ export function ring(
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
-    if (share > 0) {
-        ctx.strokeStyle = color;
-        ctx.shadowColor = fade(color, 0.45);
-        ctx.shadowBlur = 6;
-        ctx.beginPath();
-        ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, share));
-        ctx.stroke();
-    }
     ctx.restore();
+    sweepArc(ctx, { x, y, r, width, color, alpha: 1, glow: 0.22, reach: 7, motion }, sink);
 }
 
 /**
  * A timer's or a pomodoro's ring, as large as `area` allows: its track, and
- * its arc from the top clockwise to `progress`.
+ * its arc from the top, clockwise, to `progress` (0-1), at `alpha`. Drawn into
+ * the picture: it steps with the digits, once a second. Without a progress,
+ * the track alone.
  */
 export function timeRing(
     ctx: CanvasRenderingContext2D,
     area: Area,
     color: string,
     progress: number | null,
+    alpha = 1,
 ): { cx: number; cy: number; r: number } {
     const cx = area.x + area.w / 2;
     const cy = area.y + area.h / 2;
     const r = Math.min(area.w, area.h) * 0.4;
-    ctx.lineWidth = Math.max(2, r * 0.12);
+    const width = Math.max(2, r * 0.12);
+    ctx.lineWidth = width;
     ctx.lineCap = "round";
     ctx.strokeStyle = fade(color, 0.18);
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    if (progress !== null && progress > 0) {
-        ctx.strokeStyle = color;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, progress));
-        ctx.stroke();
+    if (progress !== null) {
+        const motion = { share: progress };
+        paintArc(ctx, { x: cx, y: cy, r, width, color, alpha, glow: 0, reach: 0, motion }, 0);
     }
     return { cx, cy, r };
 }
@@ -260,9 +335,11 @@ export function pauseMark(
 }
 
 const covers = new Map<string, HTMLImageElement>();
+/** Pictures kept loaded: a few covers, and a page of voice channels' avatars. */
+const COVERS_KEPT = 48;
 /**
- * A cover picture, once it has loaded; null until then. When one loads, the
- * window hears "decky-art" and draws again.
+ * A cover picture or an avatar, once it has loaded; null until then. When one
+ * loads, the window hears "decky-art" and draws again.
  */
 export function coverImage(url: string): HTMLImageElement | null {
     let image = covers.get(url);
@@ -271,7 +348,7 @@ export function coverImage(url: string): HTMLImageElement | null {
         image.onload = () => window.dispatchEvent(new Event("decky-art"));
         image.src = url;
         covers.set(url, image);
-        if (covers.size > 8) covers.delete(covers.keys().next().value!);
+        if (covers.size > COVERS_KEPT) covers.delete(covers.keys().next().value!);
     }
     return image.complete && image.naturalWidth > 0 ? image : null;
 }

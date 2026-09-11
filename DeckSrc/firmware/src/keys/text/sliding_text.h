@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "keys/overlay.h"
 
 // Text too long for its key, slid along by the deck: a song's title, say. The
 // desktop draws each line once in its own font, as coverage, and the deck lays
@@ -10,32 +11,19 @@
 // without the text starting over; new text starts over.
 //
 // The text (SLIDE command) is laid out as src/shared/slide-spec.ts writes it.
-class SlidingText {
+class SlidingText : public KeyOverlay {
 public:
     static constexpr size_t MAX_BYTES = 48 * 1024;
-    // The part of the key a text covers, in key pixels.
-    struct Box {
-        int x, y, w, h;
-    };
 
     // A key's text, taking the buffer (PSRAM; freed with the text, or here when
     // it is malformed). Null if it is malformed.
     static SlidingText *load(uint8_t *data, size_t length, uint32_t now_ms);
-    // The same text for another copy of the page, going on from where it is.
-    // Null without memory for it.
-    SlidingText *clone() const;
-    ~SlidingText();
-    SlidingText(const SlidingText &) = delete;
-    SlidingText &operator=(const SlidingText &) = delete;
+    SlidingText *clone() const override;
+    ~SlidingText() override;
 
-    const Box &box() const { return box_; }
-    // Whether the text moved since it was last drawn.
-    bool due(uint32_t now_ms) const;
-    // Fix where the text is for the frame about to be drawn.
-    void frame(uint32_t now_ms);
-    // One row of the key (y, in key pixels) as the frame shows it: `key_row` is
-    // the key's picture there, and `out` takes the box's columns.
-    void row(int y, const uint16_t *key_row, uint16_t *out) const;
+    bool due(uint32_t now_ms) const override;
+    void frame(uint32_t now_ms) override;
+    void paint(int y, uint16_t *row) const override;
 
 private:
     static constexpr int MAX_LINES = 2;
@@ -58,5 +46,4 @@ private:
     int pause_ = 0, speed_ = 1, gap_ = 0, fade_ = 0;
     int count_ = 0;
     Line lines_[MAX_LINES];
-    Box box_{};
 };

@@ -98,18 +98,8 @@ export function drawTimer(
     }
     const view = timerView(widget, moment.state, moment.now);
     const running = Boolean(moment.state?.running);
-    // A stopwatch sweeps once a minute; a countdown shows how much has gone.
-    const progress =
-        widget.mode === "stopwatch"
-            ? (runTime(moment.state, moment.now) % 60_000) / 60_000
-            : view.progress;
     const color = view.done ? DOWN : look.color;
-    const { cy, r } = timeRing(
-        ctx,
-        area,
-        running || view.done ? color : fade(color, 0.5),
-        progress,
-    );
+    const { cy, r } = timeRing(ctx, area, color, view.progress, running || view.done ? 1 : 0.5);
     const inner = { x: area.x + area.w * 0.2, y: cy - r * 0.5, w: area.w * 0.6, h: r };
     bigText(ctx, view.text, color, inner, 0.62, 650, cy);
     if (!running && !view.done && runTime(moment.state, moment.now) > 0)

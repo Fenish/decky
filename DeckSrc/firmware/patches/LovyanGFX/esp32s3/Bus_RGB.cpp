@@ -90,6 +90,9 @@ namespace lgfx
     (void)event_data;
     Bus_RGB* bus = static_cast<Bus_RGB*>(user_context);
     bus->_vsync_count = bus->_vsync_count + 1;
+    // When it came (micros()' clock), so the beam can be placed without waiting
+    // for the next one.
+    bus->_vsync_at_us = static_cast<uint32_t>(esp_timer_get_time());
     // This runs in the LCD interrupt just before the driver restarts the DMA
     // for the next frame. The driver picks which bounce buffer to refill by
     // the parity of its EOF count, and zeroes the count here every frame -

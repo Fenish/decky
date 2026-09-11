@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { sweepMoving } from "../../../../shared/sweep-spec";
+import type { SweepArc } from "../../../../shared/sweep-spec";
 import { nextChange } from "../../../../shared/widgets/registry";
 import type { Widget, WidgetState } from "../../../../shared/widgets";
+import { paintArc } from "./canvas-kit";
 import { drawWidget } from "./draw-widget";
 import type { WidgetLook } from "./draw-widget";
 
 const SIZE = 240;
 
 /**
- * A widget as it looks right now, redrawn exactly when its picture next
- * changes - on the second, the minute or at midnight - rather than polling.
+ * A widget as it looks right now, as the deck shows it: its picture, redrawn
+ * exactly when it next changes - on the second, the minute or at midnight -
+ * and a ring's arc painted over it every frame while it moves, as the deck
+ * moves it.
  */
 export function WidgetPreview({
     widget,
@@ -21,7 +26,7 @@ export function WidgetPreview({
 }) {
     const ref = useRef<HTMLCanvasElement>(null);
     const [tick, setTick] = useState(0);
-    const { background, color, label } = look;
+    const { background, color, label, icon, iconSize } = look;
     // A cover picture that finished loading draws the preview again.
     useEffect(() => {
         const loaded = (): void => setTick((value) => value + 1);
@@ -31,13 +36,30 @@ export function WidgetPreview({
     useEffect(() => {
         const context = ref.current?.getContext("2d");
         if (!context) return;
-        const now = Date.now();
-        drawWidget(context, widget, { background, color, label }, SIZE, SIZE, { state, now });
-        const wait = nextChange(widget, state, now);
-        if (wait === null) return;
-        const timer = setTimeout(() => setTick((value) => value + 1), wait + 5);
-        return () => clearTimeout(timer);
-    }, [widget, background, color, label, state, tick]);
+        let frame = 0;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const draw = (): void => {
+            const now = Date.now();
+            const sweeps: SweepArc[] = [];
+            drawWidget(context, widget, { background, color, label, icon, iconSize }, SIZE, SIZE, {
+                state,
+                now,
+                sweeps,
+            });
+            for (const arc of sweeps) paintArc(context, arc, now);
+            if (sweeps.some((arc) => sweepMoving(arc.motion, now)))
+                frame = requestAnimationFrame(draw);
+            else {
+                const wait = nextChange(widget, state, now);
+                if (wait !== null) timer = setTimeout(draw, wait + 5);
+            }
+        };
+        draw();
+        return () => {
+            cancelAnimationFrame(frame);
+            clearTimeout(timer);
+        };
+    }, [widget, background, color, label, icon, iconSize, state, tick]);
     return (
         <canvas
             ref={ref}

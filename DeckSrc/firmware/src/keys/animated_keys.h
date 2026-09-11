@@ -14,12 +14,17 @@ namespace keys {
 class AnimatedKeys {
 public:
     static constexpr int KEYS = 15;
-    // The last LOOKS looks are kept, by CRC.
-    static constexpr int LOOKS = 4;
+    // Looks are kept by CRC: one for every key, and one more arriving to take
+    // over from one of them. A look a key is armed with is never dropped for
+    // another; looks no key uses go first, least lately armed, and also when
+    // PSRAM runs short (memory::spare).
+    static constexpr int LOOKS = KEYS + 1;
     static constexpr size_t MAX_BYTES = 48 * 1024;
 
-    // Keep a look, taking the buffer (PSRAM, freed here). False if malformed.
-    bool load(uint8_t *data, size_t length, uint32_t crc);
+    enum class Loaded : uint8_t { Kept, Malformed, NoRoom };
+    // Keep a look, taking the buffer (PSRAM, freed here). NoRoom when PSRAM
+    // cannot spare it even with every unused look gone.
+    Loaded load(uint8_t *data, size_t length, uint32_t crc);
     bool known(uint32_t crc) const { return find(crc) != nullptr; }
     // Show a kept look on a key of the page (id, signature) at a label. A key
     // already moving with a look of the same kind keeps moving with this one
@@ -59,6 +64,9 @@ private:
     Look *find(uint32_t crc) const;
     // A look goes, and every key armed with it.
     void drop(int slot);
+    bool in_use(const Look *look) const;
+    // The slot armed least lately whose look no key uses; -1 if none.
+    int unused_slot() const;
     KeyAnimation *at(int cell) const { return cell >= 0 && cell < KEYS ? keys_[cell] : nullptr; }
 
     Look *looks_[LOOKS] = {};

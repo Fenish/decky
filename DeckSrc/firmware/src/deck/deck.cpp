@@ -74,7 +74,8 @@ void Deck::loop() {
     if (session_.online && !updating && millis() - session_.last_heard_ms > Session::HOST_TIMEOUT_MS) disconnected();
     touch_.poll(*this);
     animation_frames();
-    view_.text_frames();
+    view_.overlay_frames();
+    artwork_store::step();
     vTaskDelay(1);
 }
 
@@ -108,8 +109,8 @@ void Deck::disconnected() {
     drag_.clear();
     transfer_.reset_block();
     animations_.disarm_all();
-    // Sliding text and live pictures are the session's: the next desktop
-    // sends what it wants, over the pages' own pictures.
+    // Overlays and live pictures are the session's: the next desktop sends
+    // what it wants, over the pages' own pictures.
     pages_.drop_lives();
     status_.show(-1, "Disconnected");
 }
@@ -143,11 +144,13 @@ void Deck::released(int cell, uint32_t now) {
 }
 
 void Deck::between_blocks() {
+    // Overlays move at the panel's pace through transfers, which on a page of
+    // live widgets take much of every second; each costs little unless it moved.
+    view_.overlay_frames();
     if (millis() - touch_polled_ms_ < TOUCH_DURING_TRANSFER_MS) return;
     touch_polled_ms_ = millis();
     touch_.poll(*this);
     animation_frames();
-    view_.text_frames();
 }
 
 void Deck::animation_frames() {

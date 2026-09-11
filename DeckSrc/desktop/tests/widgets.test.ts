@@ -73,6 +73,18 @@ describe("timers", () => {
         const stopwatch = { type: "timer", mode: "stopwatch", seconds: 300 } as const;
         expect(timerView(stopwatch, running, NOW).text).toBe("1:01");
     });
+    it("moves the ring by the whole seconds the digits show: even steps, however often drawn", () => {
+        const countdown = { type: "timer", mode: "countdown", seconds: 10 } as const;
+        const at = (ms: number) => timerView(countdown, { elapsed: ms }, NOW);
+        // Drawn at any moment within a second, it is where that second puts it.
+        for (const ms of [3000, 3001, 3400, 3999]) expect(at(ms).progress).toBeCloseTo(0.3);
+        expect(at(4000)).toMatchObject({ text: "0:06" });
+        expect(at(4000).progress).toBeCloseTo(0.4);
+        expect(at(0).progress).toBe(0);
+        expect(at(10_000).progress).toBe(1);
+        const stopwatch = { type: "timer", mode: "stopwatch", seconds: 300 } as const;
+        expect(timerView(stopwatch, { elapsed: 75_900 }, NOW).progress).toBeCloseTo(0.25);
+    });
 });
 
 describe("pomodoro", () => {
@@ -93,6 +105,12 @@ describe("pomodoro", () => {
             text: "24:00",
             rounds: 1,
         });
+    });
+    it("moves its ring by the whole seconds its digits show", () => {
+        const at = (ms: number) => pomodoroView(pomodoro, { elapsed: ms }, NOW).progress;
+        expect(at(5 * MINUTE)).toBeCloseTo(0.2);
+        expect(at(5 * MINUTE + 999)).toBeCloseTo(0.2);
+        expect(at(26 * MINUTE)).toBeCloseTo(0.2);
     });
     it("skips to the start of the next phase", () => {
         expect(pomodoroSkip(pomodoro, { elapsed: 3 * MINUTE }, NOW)).toBe(25 * MINUTE);

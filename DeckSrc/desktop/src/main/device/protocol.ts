@@ -81,6 +81,7 @@ export function parseIdentity(line: string, path: string): DeckIdentity | null {
         warm: fields.get("warm") === 1,
         block: fields.get("block"),
         slide: fields.get("slide") === 1,
+        sweep: fields.get("sweep") === 1,
         // Reported from protocol 7 on; older firmware has no version to show.
         firmwareVersion: parts
             .slice(5)

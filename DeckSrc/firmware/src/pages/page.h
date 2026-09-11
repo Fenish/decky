@@ -1,6 +1,6 @@
 #pragma once
 #include <stdint.h>
-#include "keys/text/sliding_text.h"
+#include "keys/overlay.h"
 
 // A copy of one of the desktop's pages, as the deck holds it in PSRAM - named
 // by the page's index (id) and signature, the CRC-32 of its 15 keys' own
@@ -13,8 +13,8 @@
 //    chosen with STATE.
 //  - Live pictures: widget keys' current pictures (LIVE), kept apart from the
 //    own ones and shown over them.
-//  - Sliding text: text too long for its key, slid over its live picture
-//    (SLIDE), and going with it.
+//  - Overlays: what the deck moves over a key's live picture by itself -
+//    sliding text (SLIDE), a ring's arc (SWEEP) - going with it.
 class Page {
 public:
     static constexpr int KEYS = 15;
@@ -25,10 +25,13 @@ public:
     uint16_t *shown_off(int cell) const;
     // A live picture for the key, begun empty; null without room for one.
     uint16_t *new_live(int cell);
-    // A key's live picture goes, and the sliding text over it with it.
+    // A key's live picture goes, and its overlays with it.
     void drop_live(int cell);
     void drop_lives();
     void drop_alternates();
+    // A key's overlay of this kind, in place of any it had; null takes it away.
+    void set_overlay(int cell, KeyOverlay::Kind kind, KeyOverlay *overlay);
+    bool has_overlays(int cell) const;
 
     int id = -1;
     uint32_t signature = 0;
@@ -42,5 +45,5 @@ public:
     uint16_t alternate_lit = 0;
     uint16_t artwork_dirty = 0;  // ON pictures replaced while showing
     uint16_t *live[KEYS] = {};
-    SlidingText *texts[KEYS] = {};
+    KeyOverlay *overlays[KEYS][KeyOverlay::KINDS] = {};
 };

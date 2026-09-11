@@ -20,7 +20,7 @@ export function drawPomodoro(
     const view = pomodoroView(widget, moment.state, moment.now);
     const running = Boolean(moment.state?.running);
     const color = view.phase === "focus" ? look.color : REST;
-    const { cx, cy, r } = timeRing(ctx, area, running ? color : fade(color, 0.5), view.progress);
+    const { cx, cy, r } = timeRing(ctx, area, color, view.progress, running ? 1 : 0.5);
     ctx.fillStyle = fade(color, 0.75);
     ctx.font = `700 ${Math.round(r * 0.28)}px ${FONT}`;
     ctx.fillText(view.phase === "focus" ? "FOCUS" : "BREAK", cx, cy - r * 0.42);

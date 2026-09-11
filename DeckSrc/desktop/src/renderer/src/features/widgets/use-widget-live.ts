@@ -1,23 +1,58 @@
 import { useEffect, useRef, useState } from "react";
 import { isWidgetKey, keyAddress } from "../../../../shared/config";
-import type { DeckConfig, KeyConfig } from "../../../../shared/config";
+import type { DeckConfig, DeckPage, KeyConfig } from "../../../../shared/config";
 import type { DeckStatus, Warmup } from "../../../../shared/api";
 import { deckTurned, nextChange } from "../../../../shared/widgets/registry";
-import type { WidgetStates } from "../../../../shared/widgets";
+import type { Widget, WidgetStates } from "../../../../shared/widgets";
 import { widgetParts } from "../artwork/artwork";
-import { deckLook } from "./wheel";
+import { widgetLook } from "./draw-widget";
+import { deckLook, deckLooks } from "./wheel";
 
-const lookOf = (key: KeyConfig) => ({
-    background: key.background ?? "#000000",
-    color: key.color,
-    label: key.label,
-});
+/** What the deck draws over keys by itself: sliding text (slide=1), rings' arcs (sweep=1). */
+interface DeckDraws {
+    slides: boolean;
+    sweeps: boolean;
+}
+
+/** A widget key on a page. */
+interface WidgetKey {
+    page: DeckPage;
+    key: KeyConfig;
+    widget: Widget;
+}
+
+/**
+ * The keys whose looks loading sends: every key the deck turns, now or at
+ * rest - a running countdown's drum comes back when it stops - where the deck
+ * turns that kind (drums with wheel=1, dials and dice also with `dials`). The
+ * page shown comes last, so its looks are the newest the deck keeps.
+ */
+export function lookKeys(
+    config: DeckConfig,
+    states: WidgetStates,
+    now: number,
+    dials: boolean,
+): WidgetKey[] {
+    const shown = (page: DeckPage) => page.id === config.activePageId;
+    const pages = [...config.pages.filter((page) => !shown(page)), ...config.pages.filter(shown)];
+    return pages.flatMap((page) =>
+        Object.entries(page.keys).flatMap(([cell, key]): WidgetKey[] => {
+            if (key.action.kind !== "widget" || !isWidgetKey(page, Number(cell))) return [];
+            const widget = key.action.widget;
+            const state = states[keyAddress(page.id, Number(cell))];
+            const turned = deckTurned(widget, state, now) ?? deckTurned(widget, undefined, now);
+            return turned && (turned === "drum" || dials) ? [{ page, key, widget }] : [];
+        }),
+    );
+}
 
 /**
  * What loading brings up to date besides the pages: every widget key's
- * picture as it is now, on every page, with the text the deck slides on it
- * where it slides text (`slides`), and each look of the keys the deck turns
- * (dials and dice where the deck turns those, `dials`) once.
+ * picture as it is now, on every page, with what the deck draws over it where
+ * it does (`deck`: sliding text, rings' arcs), and every look each key the
+ * deck turns can take (lookKeys, deckLooks), once each: a dial's muted look
+ * too. So nothing pressed after loading waits for a look to be drawn or to
+ * travel.
  */
 export function widgetWarmup(
     config: DeckConfig,
@@ -25,10 +60,9 @@ export function widgetWarmup(
     width: number,
     height: number,
     dials: boolean,
-    slides = false,
+    deck: DeckDraws = { slides: false, sweeps: false },
 ): Warmup {
     const warmup: Warmup = { widgets: [], looks: [] };
-    const seen = new Set<string>();
     const now = Date.now();
     for (const page of config.pages)
         for (const [text, key] of Object.entries(page.keys)) {
@@ -36,14 +70,14 @@ export function widgetWarmup(
             if (key.action.kind !== "widget" || !isWidgetKey(page, cell)) continue;
             const widget = key.action.widget;
             const state = states[keyAddress(page.id, cell)];
-            const { frame, slide } = widgetParts(key, widget, state, now, width, height, slides);
-            warmup.widgets.push({ pageId: page.id, cell, frame, ...(slides ? { slide } : {}) });
-            const turned = deckTurned(widget, state, now);
-            if (!turned || (turned !== "drum" && !dials)) continue;
-            const armed = deckLook(lookOf(key), widget, state, width, height);
-            if (!armed) continue;
-            const id = `${armed.spec.length}:${armed.spec.join(",")}`;
-            if (!seen.has(id)) warmup.looks.push({ pageId: page.id, spec: armed.spec });
+            const { frame, overlays } = widgetParts(key, widget, state, now, width, height, deck);
+            warmup.widgets.push({ pageId: page.id, cell, frame, overlays });
+        }
+    const seen = new Set<string>();
+    for (const { page, key, widget } of lookKeys(config, states, now, dials))
+        for (const spec of deckLooks(widgetLook(key), widget, width, height)) {
+            const id = `${spec.length}:${spec.join(",")}`;
+            if (!seen.has(id)) warmup.looks.push({ pageId: page.id, spec });
             seen.add(id);
         }
     return warmup;
@@ -68,8 +102,10 @@ export function useWidgetLive(
     const live = status.connected && status.identity.live === true;
     const wheels = status.connected && status.identity.wheel === true;
     const dials = status.connected && status.identity.dial === true;
-    // Text too long for its key goes to the deck to slide (slide=1).
+    // Text too long for its key goes to the deck to slide (slide=1), and
+    // rings' arcs for it to move (sweep=1).
     const slides = status.connected && status.identity.slide === true;
+    const sweeps = status.connected && status.identity.sweep === true;
     // A cover picture that finished loading draws its key again.
     const [covers, setCovers] = useState(0);
     useEffect(() => {
@@ -96,7 +132,7 @@ export function useWidgetLive(
             const now = Date.now();
             const turned = deckTurned(widget, state, now);
             if (wheels && turned && (turned === "drum" || dials)) {
-                const armed = deckLook(lookOf(key), widget, state, width, height);
+                const armed = deckLook(widgetLook(key), widget, state, width, height);
                 if (armed && armed.index >= 0) {
                     void window.deck
                         .wheelKey(page.id, cell, armed.spec, armed.values, armed.index)
@@ -104,10 +140,11 @@ export function useWidgetLive(
                     return;
                 }
             }
-            const { frame, slide } = widgetParts(key, widget, state, now, width, height, slides);
-            void window.deck
-                .liveKey(page.id, cell, frame, slides ? slide : undefined)
-                .catch(() => {});
+            const { frame, overlays } = widgetParts(key, widget, state, now, width, height, {
+                slides,
+                sweeps,
+            });
+            void window.deck.liveKey(page.id, cell, frame, overlays).catch(() => {});
             const wait = nextChange(widget, state, now);
             if (wait !== null) timers.push(setTimeout(() => send(cell), wait + 15));
         };
@@ -116,7 +153,7 @@ export function useWidgetLive(
             stopped = true;
             timers.forEach(clearTimeout);
         };
-    }, [live, wheels, dials, slides, config, states, landed, width, height, covers]);
+    }, [live, wheels, dials, slides, sweeps, config, states, landed, width, height, covers]);
 
     // Pages not shown, where the deck takes their pictures (warm=1): each widget
     // key again when its state changes, at most every HIDDEN_MS, and one that
@@ -151,10 +188,11 @@ export function useWidgetLive(
                     if (stopped) return;
                     const at = Date.now();
                     hiddenSent.current.set(address, { at, token });
-                    const parts = widgetParts(key, widget, state, at, width, height, slides);
-                    void window.deck
-                        .liveKey(page.id, cell, parts.frame, slides ? parts.slide : undefined)
-                        .catch(() => {});
+                    const { frame, overlays } = widgetParts(key, widget, state, at, width, height, {
+                        slides,
+                        sweeps,
+                    });
+                    void window.deck.liveKey(page.id, cell, frame, overlays).catch(() => {});
                 };
                 const wait = sent ? sent.at + HIDDEN_MS - now : 0;
                 if (wait <= 0) send();
@@ -165,7 +203,7 @@ export function useWidgetLive(
             stopped = true;
             timers.forEach(clearTimeout);
         };
-    }, [warm, slides, config, states, tick, width, height, covers]);
+    }, [warm, slides, sweeps, config, states, tick, width, height, covers]);
 }
 
 const HIDDEN_MS = 5000;

@@ -8,7 +8,7 @@
 // past it with enough of the frame left before it comes round again.
 class Screen {
 public:
-    // Where the beam is, against the panel's VSYNC, checked every 200 ms.
+    // Where the beam is, against the panel's last VSYNC, as its interrupt stamped it.
     void resync();
     // Whether `rect` can be written now without tearing.
     bool clear(const keygrid::Rect &rect);

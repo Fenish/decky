@@ -113,8 +113,7 @@ void SlidingText::frame(uint32_t now_ms) {
     }
 }
 
-void SlidingText::row(int y, const uint16_t *key_row, uint16_t *out) const {
-    memcpy(out, key_row + box_.x, box_.w * sizeof(uint16_t));
+void SlidingText::paint(int y, uint16_t *row) const {
     for (int i = 0; i < count_; ++i) {
         const Line &line = lines_[i];
         if (y < line.y || y >= line.y + line.h) continue;
@@ -125,7 +124,7 @@ void SlidingText::row(int y, const uint16_t *key_row, uint16_t *out) const {
         // whole and neither edge jumps as a lap begins or ends.
         const int fade_left = min(fade_, min(line.offset, lap - line.offset));
         const int fade_right = fade_;
-        uint16_t *target = out + (line.x - box_.x);
+        uint16_t *target = row + line.x;
         for (int c = 0; c < line.w; ++c) {
             int s = c + line.offset;
             if (s >= lap) s -= lap;

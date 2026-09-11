@@ -23,27 +23,52 @@ void AnimatedKeys::drop(int slot) {
     looks_[slot] = nullptr;
 }
 
-bool AnimatedKeys::load(uint8_t *data, size_t length, uint32_t crc) {
+bool AnimatedKeys::in_use(const Look *look) const {
+    for (KeyAnimation *key : keys_)
+        if (key && &key->look() == look) return true;
+    return false;
+}
+
+int AnimatedKeys::unused_slot() const {
+    int slot = -1;
+    for (int i = 0; i < LOOKS; ++i)
+        if (looks_[i] && !in_use(looks_[i]) && (slot < 0 || looks_[i]->used < looks_[slot]->used)) slot = i;
+    return slot;
+}
+
+AnimatedKeys::Loaded AnimatedKeys::load(uint8_t *data, size_t length, uint32_t crc) {
     if (find(crc)) {
         free(data);
-        return true;
+        return Loaded::Kept;
     }
-    // An empty slot, else the look armed least lately.
-    int slot = 0;
-    for (int i = 0; i < LOOKS; ++i) {
-        if (!looks_[i]) {
-            slot = i;
-            break;
+    // Its backdrop must leave a page's worth whole: unused looks go until it
+    // does, least lately armed first.
+    const size_t key = KeyImage::bytes();
+    while (!memory::spare(key, key * KEYS)) {
+        const int unused = unused_slot();
+        if (unused < 0) {
+            free(data);
+            return Loaded::NoRoom;
         }
-        if (looks_[i]->used < looks_[slot]->used) slot = i;
+        drop(unused);
+    }
+    // An empty slot, else the unused look armed least lately. With a slot for
+    // every key and one more, there always is one.
+    int slot = -1;
+    for (int i = 0; i < LOOKS && slot < 0; ++i)
+        if (!looks_[i]) slot = i;
+    if (slot < 0) slot = unused_slot();
+    if (slot < 0) {
+        free(data);
+        return Loaded::NoRoom;
     }
     drop(slot);
     Look *look = Look::parse(data, length);
-    if (!look) return false;
+    if (!look) return Loaded::Malformed;
     look->crc = crc;
     look->used = ++used_counter_;
     looks_[slot] = look;
-    return true;
+    return Loaded::Kept;
 }
 
 bool AnimatedKeys::arm(int cell, int page, uint32_t signature, uint32_t crc, int index) {

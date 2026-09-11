@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "keys/overlay.h"
 #include "protocol/command_router.h"
 
 class Deck;
@@ -15,6 +16,7 @@ class Deck;
 //   STATE <index> <CRC32> <mask>    show a page with these toggle keys on
 //   LIVE <index> <CRC32> <cell> ... a widget key's live picture, as a patch
 //   SLIDE <index> <CRC32> <cell> ...text too long for its key, to slide
+//   SWEEP <index> <CRC32> <cell> ...a ring's arc, for the deck to move
 // The desktop's README describes each in full.
 class PageCommands : public CommandTable<PageCommands> {
 public:
@@ -34,7 +36,11 @@ private:
     bool state(const char *line);
     bool live(const char *line);
     bool slide(const char *line);
+    bool sweep(const char *line);
 
+    // SLIDE and SWEEP once read: a key's overlay of that kind given, or taken away.
+    void overlay(KeyOverlay::Kind kind, int id, uint32_t signature, int cell, size_t bytes, uint32_t checksum,
+                 int64_t clock);
     void begin(int id, uint32_t signature, bool cache_only);
     // A key of the page being built has its own picture now.
     void arrived(int cell);

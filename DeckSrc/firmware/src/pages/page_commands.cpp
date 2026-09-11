@@ -6,6 +6,8 @@
 #include "common/memory.h"
 #include "deck/deck.h"
 #include "keygrid.h"
+#include "keys/sweep/sweep.h"
+#include "keys/text/sliding_text.h"
 #include "network/wireless.h"
 #include "pages/patch.h"
 #include "storage/artwork_store.h"
@@ -13,6 +15,25 @@
 namespace {
 constexpr size_t LIVE_MAX_BYTES = 64 * 1024;
 Stream &reply() { return wireless::reply(); }
+
+// Each kind of overlay as its command brings it: the name its replies give,
+// the most it takes, and how it is read (the desktop's clock for those that
+// move with it).
+struct OverlayKind {
+    const char *name;
+    size_t max_bytes;
+    KeyOverlay *(*load)(uint8_t *data, size_t length, uint32_t now_ms, int64_t clock);
+};
+const OverlayKind OVERLAY_KINDS[KeyOverlay::KINDS] = {
+    {"slide", SlidingText::MAX_BYTES,
+     [](uint8_t *data, size_t length, uint32_t now_ms, int64_t) -> KeyOverlay * {
+         return SlidingText::load(data, length, now_ms);
+     }},
+    {"sweep", Sweep::BYTES,
+     [](uint8_t *data, size_t length, uint32_t now_ms, int64_t clock) -> KeyOverlay * {
+         return Sweep::load(data, length, now_ms, clock);
+     }},
+};
 }  // namespace
 
 bool PageCommands::run(const char *name, const char *line) {
@@ -29,6 +50,8 @@ bool PageCommands::run(const char *name, const char *line) {
         {"STATE", &PageCommands::state},
         {"LIVE", &PageCommands::live},
         {"SLIDE", &PageCommands::slide},
+        // A ring's arc, moved by the deck (sweep=1).
+        {"SWEEP", &PageCommands::sweep},
     };
     return run_from(COMMANDS, name, line);
 }
@@ -234,8 +257,6 @@ bool PageCommands::commit(const char *line) {
     Page &page = *pages.pending;
     page.complete = true;
     page.used = millis();
-    const bool stored = artwork_store::save(page.id, -1, signature, page.pixels, KeyImage::bytes(), keygrid::COUNT,
-                                            page.lit_mask);
     session.heard(millis());
     if (pages.pending_activate) {
         pages.pending = nullptr;
@@ -250,6 +271,9 @@ bool PageCommands::commit(const char *line) {
     }
     pages.retire_others(page);
     session.transitioning = session.warming;
+    // Shown first, then saved to the card by the main loop, a slice at a time.
+    const bool stored = artwork_store::save_in_steps(page.id, -1, signature, page.pixels, KeyImage::bytes(),
+                                                     keygrid::COUNT, page.lit_mask);
     reply().printf("OK committed %d stored=%d\n", page.id, stored ? 1 : 0);
     return true;
 }
@@ -422,44 +446,70 @@ bool PageCommands::live(const char *line) {
     return true;
 }
 
-// On any page the deck holds; 0 bytes takes it away. It slides over the key's
-// live picture, and goes with it.
 bool PageCommands::slide(const char *line) {
     int id = 0, cell = 0;
     unsigned int signature = 0, bytes = 0, checksum = 0;
     char extra = 0;
     if (sscanf(line, "SLIDE %d %u %d %u %u %c", &id, &signature, &cell, &bytes, &checksum, &extra) != 5)
         return false;
+    overlay(KeyOverlay::TEXT, id, signature, cell, bytes, checksum, 0);
+    return true;
+}
+
+// Its line ends with the desktop's clock as it was sent (ms since 1970): the
+// arc's motion is in that clock.
+bool PageCommands::sweep(const char *line) {
+    int id = 0, cell = 0;
+    unsigned int signature = 0, bytes = 0, checksum = 0;
+    long long clock = 0;
+    char extra = 0;
+    if (sscanf(line, "SWEEP %d %u %d %u %u %lld %c", &id, &signature, &cell, &bytes, &checksum, &clock, &extra) != 6)
+        return false;
+    overlay(KeyOverlay::SWEEP, id, signature, cell, bytes, checksum, clock);
+    return true;
+}
+
+// On any page the deck holds; 0 bytes takes it away. It goes over the key's
+// live picture, and with it.
+void PageCommands::overlay(KeyOverlay::Kind kind, int id, uint32_t signature, int cell, size_t bytes,
+                           uint32_t checksum, int64_t clock) {
+    // Taken now, before its bytes arrive: the desktop's clock was read as the
+    // line was sent.
+    const uint32_t heard = millis();
+    const OverlayKind &type = OVERLAY_KINDS[kind];
+    // Replies as println ends them.
+    const auto answer = [&](const char *format) {
+        reply().printf(format, type.name);
+        reply().print("\r\n");
+    };
     Session &session = deck_.session();
     PageCache &pages = deck_.pages();
     Page *page = pages.find(id, signature);
-    if (!page || cell < 0 || cell >= keygrid::COUNT || bytes > SlidingText::MAX_BYTES) {
-        reply().println("ERR invalid slide");
-        return true;
+    if (!page || cell < 0 || cell >= keygrid::COUNT || bytes > type.max_bytes) {
+        answer("ERR invalid %s");
+        return;
     }
-    SlidingText *text = nullptr;
+    KeyOverlay *overlay = nullptr;
     if (bytes) {
         auto *payload = static_cast<uint8_t *>(memory::psram(bytes));
         if (!payload) {
-            reply().println("ERR slide allocation failed");
-            return true;
+            answer("ERR %s allocation failed");
+            return;
         }
         if (!deck_.transfer().read(payload, bytes, checksum)) {
             free(payload);
-            return true;
+            return;
         }
-        text = SlidingText::load(payload, bytes, millis());
-        if (!text) {
-            reply().println("ERR slide payload");
-            return true;
+        overlay = type.load(payload, bytes, heard, clock);
+        if (!overlay) {
+            answer("ERR %s payload");
+            return;
         }
     }
-    delete page->texts[cell];
-    page->texts[cell] = text;
+    page->set_overlay(cell, kind, overlay);
     page->used = millis();
     session.heard(millis());
     if (page == pages.active && !deck_.status().shown() && !session.transitioning)
         deck_.view().draw_key(cell, cell == deck_.touch().pressed_cell());
-    reply().println("OK slide");
-    return true;
+    answer("OK %s");
 }

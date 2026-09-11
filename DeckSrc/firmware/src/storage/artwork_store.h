@@ -6,6 +6,10 @@
 // when its pictures still have the CRC it was saved under; anything torn or
 // stale is fetched from the desktop again. Files outside /decky-cache/ are
 // never touched, and the card is never formatted.
+//
+// A page is saved in steps: the main loop writes one slice of it at a time,
+// so the deck keeps drawing and reading touches while the card is written.
+// One save is under way at most. Anything else on the card finishes it first.
 namespace artwork_store {
 // Mount the card (the panel's separate TF slot).
 void begin();
@@ -15,6 +19,15 @@ uint64_t capacity();
 // into `pixels`; false when the card has no good copy.
 bool load(int page, int cell, uint32_t signature, uint16_t *pixels, size_t cell_bytes, int cells, uint16_t &lit_mask);
 // Saved through a temporary file and a backup, so a torn write loses nothing.
+// This one is written whole before it returns.
 bool save(int page, int cell, uint32_t signature, const uint16_t *pixels, size_t cell_bytes, int cells,
           uint16_t lit_mask);
+// The same save, written by step(). `pixels` must not change until it is done.
+// False when there is no card, or the save before it failed.
+bool save_in_steps(int page, int cell, uint32_t signature, const uint16_t *pixels, size_t cell_bytes, int cells,
+                   uint16_t lit_mask);
+// The next slice of a save under way, if there is one.
+void step();
+// The rest of a save under way, now.
+void finish();
 }  // namespace artwork_store

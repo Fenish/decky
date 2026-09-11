@@ -181,6 +181,10 @@ bool wait_vsync(uint32_t timeout_ms)
 {
     return display.bus.waitVSync(timeout_ms);
 }
+uint32_t last_vsync_us()
+{
+    return display.bus.lastVSyncMicros();
+}
 bool recover_scanout()
 {
     return display.bus.restartScanout();

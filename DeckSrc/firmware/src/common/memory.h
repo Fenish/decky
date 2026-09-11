@@ -12,4 +12,10 @@ inline void *psram(size_t bytes) { return heap_caps_malloc(bytes, MALLOC_CAP_SPI
 inline uint16_t *pixels(size_t count) { return static_cast<uint16_t *>(psram(count * sizeof(uint16_t))); }
 inline size_t free_bytes() { return heap_caps_get_free_size(MALLOC_CAP_SPIRAM); }
 inline size_t largest_block() { return heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM); }
+// Whether `take` more bytes still leave `whole` in one piece, above the
+// floor: extras (live pictures, looks) take memory only on these terms, so a
+// page can always be loaded.
+inline bool spare(size_t take, size_t whole) {
+    return free_bytes() >= take + whole + FLOOR && largest_block() >= take + whole;
+}
 }  // namespace memory

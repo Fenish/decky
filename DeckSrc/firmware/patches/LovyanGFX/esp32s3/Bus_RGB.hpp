@@ -72,6 +72,8 @@ namespace lgfx
     bool init(void) override;
     void release(void) override;
     bool waitVSync(uint32_t timeout_ms = 50);
+    // When the last vertical sync came, in micros()' clock; 0 before the first.
+    uint32_t lastVSyncMicros(void) const { return _vsync_at_us; }
     void beginTransaction(void) override {}
     void endTransaction(void) override {}
     void wait(void) override {}
@@ -105,6 +107,7 @@ namespace lgfx
     esp_lcd_panel_handle_t _panel_handle = nullptr;
     uint8_t* _frame_buffers[2] = { nullptr, nullptr };
     volatile uint32_t _vsync_count = 0;
+    volatile uint32_t _vsync_at_us = 0;
     void* _driver = nullptr;  // the driver's own panel state, once its layout is confirmed
     volatile int32_t _seen_pos = -1;
     volatile uint32_t _min_eofs = UINT32_MAX;

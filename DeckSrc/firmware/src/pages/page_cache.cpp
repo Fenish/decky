@@ -11,6 +11,8 @@ Page *PageCache::find(int id, uint32_t signature) {
 }
 
 PageCache::Started PageCache::start(int id, uint32_t signature) {
+    // A save under way reads from a page this may reuse.
+    artwork_store::finish();
     const size_t key_bytes = KeyImage::bytes(), page_bytes = key_bytes * Page::KEYS;
     Page *base = nullptr;
     for (auto &page : slots_)
@@ -50,8 +52,12 @@ PageCache::Started PageCache::start(int id, uint32_t signature) {
         for (int cell = 0; cell < Page::KEYS; ++cell) {
             if (!base->live[cell] || !slot->new_live(cell)) continue;
             memcpy(slot->live[cell], base->live[cell], key_bytes);
-            // Its sliding text goes with it, or neither does.
-            if (base->texts[cell] && !(slot->texts[cell] = base->texts[cell]->clone())) {
+            // Its overlays go with it, or none of it does.
+            bool whole = true;
+            for (int kind = 0; kind < KeyOverlay::KINDS && whole; ++kind)
+                if (const KeyOverlay *overlay = base->overlays[cell][kind])
+                    whole = (slot->overlays[cell][kind] = overlay->clone()) != nullptr;
+            if (!whole) {
                 slot->drop_live(cell);
                 continue;
             }

@@ -35,7 +35,11 @@ export function drawMedia(
         return;
     }
     const art = track.art ? coverImage(track.art) : null;
-    const progress = track.duration > 0 ? trackPosition(track, moment!.now) / track.duration : null;
+    // By whole seconds, as its tick comes: drawn again between two - any other
+    // widget's state changing redraws the page's keys - it is the same picture,
+    // and costs nothing on the link.
+    const second = Math.floor(trackPosition(track, moment!.now) / 1000) * 1000;
+    const progress = track.duration > 0 ? second / track.duration : null;
     const artless = (box: Area): void => {
         const wash = ctx.createLinearGradient(box.x, box.y, box.x + box.w, box.y + box.h);
         wash.addColorStop(0, fade(look.color, 0.22));

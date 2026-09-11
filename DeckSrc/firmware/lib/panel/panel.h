@@ -160,6 +160,12 @@ uint16_t *framebuffer();
  *       write a region only while the scanout is somewhere else.
  */
 bool wait_vsync(uint32_t timeout_ms = 50);
+/**
+ * @brief When the last vertical sync came, without waiting for the next.
+ * @return micros() at the last sync; 0 before the first.
+ * @note The interrupt stamps it, so placing the beam never holds the loop.
+ */
+uint32_t last_vsync_us();
 // Restart scanout from the first line at the next vertical blank, keeping the
 // picture. A slipped picture does not need it: the bus guards that per frame.
 bool recover_scanout();

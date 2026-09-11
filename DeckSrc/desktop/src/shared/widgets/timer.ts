@@ -74,18 +74,30 @@ export function countdownEnd(widget: Widget, state: WidgetState | undefined): nu
     return state.since + timerSeconds(widget, state) * 1000 - (state.elapsed ?? 0);
 }
 
+/**
+ * What a timer shows: its digits, how far round its ring is, and whether a
+ * countdown has ended. A stopwatch's ring goes round once a minute; a
+ * countdown's fills as its time goes. The ring moves by the whole seconds the
+ * digits show, so it steps with them - evenly, however often the key happens
+ * to be drawn between two seconds, and an unchanged picture is never sent.
+ */
 export function timerView(
     widget: TimerWidget,
     state: WidgetState | undefined,
     now: number,
 ): { text: string; progress: number; done: boolean } {
     const run = runTime(state, now);
-    if (widget.mode === "stopwatch") return { text: formatDuration(run), progress: 0, done: false };
-    const total = timerSeconds(widget, state) * 1000;
-    const left = Math.max(0, total - run);
+    if (widget.mode === "stopwatch")
+        return {
+            text: formatDuration(run),
+            progress: (Math.floor(run / 1000) % 60) / 60,
+            done: false,
+        };
+    const seconds = timerSeconds(widget, state);
+    const left = Math.max(0, seconds * 1000 - run);
     return {
         text: formatDuration(left, true),
-        progress: Math.min(1, run / total),
+        progress: 1 - Math.ceil(left / 1000) / seconds,
         done: left === 0,
     };
 }

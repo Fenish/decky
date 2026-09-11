@@ -26,10 +26,11 @@ export function pomodoroView(
     const phase = into < focus ? "focus" : "rest";
     const length = phase === "focus" ? focus : cycle - focus;
     const spent = phase === "focus" ? into : into - focus;
+    // The ring moves by the whole seconds the digits show, as a timer's does.
     return {
         phase,
         text: formatDuration(length - spent, true),
-        progress: spent / length,
+        progress: 1 - Math.ceil((length - spent) / 1000) / (length / 1000),
         rounds: Math.floor(run / cycle),
     };
 }

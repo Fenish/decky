@@ -37,7 +37,15 @@ export function drawSystem(
         const outer = Math.min(area.w, area.h) * 0.4;
         series.forEach((s, i) => {
             const r = outer - i * (outer * 0.3);
-            ring(ctx, cx, cy, r, outer * 0.16, (last([...s.values]) ?? 0) / 100, s.color);
+            ring(
+                ctx,
+                cx,
+                cy,
+                r,
+                outer * 0.16,
+                { share: (last([...s.values]) ?? 0) / 100 },
+                s.color,
+            );
         });
         const main = series[0]!;
         const big = Math.round(outer * (series.length > 1 ? 0.5 : 0.62));

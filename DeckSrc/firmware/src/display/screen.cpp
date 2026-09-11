@@ -6,7 +6,17 @@ namespace {
 constexpr uint32_t WRITE_ESTIMATE_FLOOR_US = 1000;
 }  // namespace
 
+// The panel's interrupt stamps every vertical sync, so this never waits: it
+// once waited for the next sync every 200 ms, holding the loop up to a frame
+// five times a second - a hitch in anything moving. Before the first stamp it
+// waits once.
 void Screen::resync() {
+    const uint32_t stamped = panel::last_vsync_us();
+    if (stamped) {
+        vsync_ref_us_ = stamped;
+        vsync_at_ = millis();
+        return;
+    }
     if (millis() - vsync_at_ < 200 && vsync_at_) return;
     if (panel::wait_vsync()) {
         vsync_ref_us_ = micros();

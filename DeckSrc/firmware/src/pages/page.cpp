@@ -6,10 +6,7 @@
 namespace {
 // Room for one more live picture that still leaves the floor free and a whole
 // page in one piece: live pictures must never be why a page cannot be built.
-bool live_room() {
-    const size_t key = KeyImage::bytes(), page = key * Page::KEYS;
-    return memory::free_bytes() >= key + page + memory::FLOOR && memory::largest_block() >= key + page;
-}
+bool live_room() { return memory::spare(KeyImage::bytes(), KeyImage::bytes() * Page::KEYS); }
 }  // namespace
 
 uint16_t *Page::own(int cell) const { return pixels + KeyImage::pixels() * cell; }
@@ -25,8 +22,18 @@ uint16_t *Page::new_live(int cell) {
 void Page::drop_live(int cell) {
     free(live[cell]);
     live[cell] = nullptr;
-    delete texts[cell];
-    texts[cell] = nullptr;
+    for (int kind = 0; kind < KeyOverlay::KINDS; ++kind) set_overlay(cell, static_cast<KeyOverlay::Kind>(kind), nullptr);
+}
+
+void Page::set_overlay(int cell, KeyOverlay::Kind kind, KeyOverlay *overlay) {
+    delete overlays[cell][kind];
+    overlays[cell][kind] = overlay;
+}
+
+bool Page::has_overlays(int cell) const {
+    for (const KeyOverlay *overlay : overlays[cell])
+        if (overlay) return true;
+    return false;
 }
 
 void Page::drop_lives() {

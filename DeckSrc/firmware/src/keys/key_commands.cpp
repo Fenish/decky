@@ -85,8 +85,9 @@ bool KeyCommands::upload(const char *line) {
         return true;
     }
     session.heard(millis());
-    if (!animations.load(payload, bytes, checksum)) {
-        reply().println("ERR wheel payload");
+    const keys::AnimatedKeys::Loaded loaded = animations.load(payload, bytes, checksum);
+    if (loaded != keys::AnimatedKeys::Loaded::Kept) {
+        reply().println(loaded == keys::AnimatedKeys::Loaded::NoRoom ? "ERR wheel memory" : "ERR wheel payload");
         return true;
     }
     if (ahead) {
