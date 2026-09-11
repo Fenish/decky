@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------
  * A die the deck rolls: a cube seen leaning a little from straight down,
  * lit from the upper left. The deck draws and throws it (firmware
- * src/wheel.cpp, with the same sums); the app draws it lying still.
+ * src/keys/die/, with the same sums); the app draws it lying still.
  *
  * Where and how it lies is its pose: the face up, where on the key (in
  * 128ths across and down) and how far it is turned (degrees), packed into

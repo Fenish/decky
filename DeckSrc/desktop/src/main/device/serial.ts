@@ -7,6 +7,7 @@
  *--------------------------------------------------------------*/
 
 import { SECURE_MARKER, SecureChannel } from "./secure-channel";
+import { parseEvent, parseIdentity } from "./protocol";
 import { SerialPort } from "serialport";
 import { Socket } from "node:net";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -45,6 +46,14 @@ export interface Reply {
     message: string;
 }
 
+/** A line from the deck, by who it is for. */
+type DeckLine =
+    /** The last plain-text line of the Wi-Fi handshake. */
+    | { kind: "handshake"; line: string }
+    | { kind: "event"; event: DeckEvent }
+    | { kind: "noise"; line: string }
+    | { kind: "reply"; line: string };
+
 const CRC_TABLE = (() => {
     const table = new Uint32Array(256);
     for (let n = 0; n < 256; n += 1) {
@@ -64,140 +73,6 @@ export function crc32(bytes: Uint8Array): number {
         crc = (CRC_TABLE[(crc ^ bytes[i]!) & 0xff]! ^ (crc >>> 8)) >>> 0;
     }
     return (crc ^ 0xffffffff) >>> 0;
-}
-
-/**
- * Read the deck's identity line.
- *
- * Shape: `OK id streamdeck 1 <mac> cells=15 cols=5 rows=3 w=118 h=123`.
- * Anything that does not start that way is some other device answering, and is
- * rejected rather than guessed at.
- */
-export function parseIdentity(line: string, path: string): DeckIdentity | null {
-    const parts = line.trim().split(/\s+/);
-    if (
-        parts[0] !== "OK" ||
-        parts[1] !== "id" ||
-        !["streamdeck", "decky"].includes(parts[2] ?? "")
-    ) {
-        return null;
-    }
-
-    const fields = new Map<string, number>();
-    for (const part of parts.slice(5)) {
-        const [key, value] = part.split("=");
-        if (key !== undefined && value !== undefined && /^\d+$/.test(value)) {
-            fields.set(key, Number(value));
-        }
-    }
-
-    const cells = fields.get("cells");
-    const columns = fields.get("cols");
-    const rows = fields.get("rows");
-    const keyWidth = fields.get("w");
-    const keyHeight = fields.get("h");
-    // Added after the first firmware; a board without it has exactly one page.
-    const pages = fields.get("pages") ?? 1;
-
-    if (
-        cells === undefined ||
-        columns === undefined ||
-        rows === undefined ||
-        keyWidth === undefined ||
-        keyHeight === undefined
-    ) {
-        return null;
-    }
-
-    if (
-        cells !== 15 ||
-        columns !== 5 ||
-        rows !== 3 ||
-        keyWidth < 1 ||
-        keyWidth > 256 ||
-        keyHeight < 1 ||
-        keyHeight > 256 ||
-        ![1, 2, 3, 4, 5, 6, 7].includes(Number(parts[3])) ||
-        !/^[a-f0-9]{12}$/i.test(parts[4] ?? "")
-    )
-        return null;
-
-    return {
-        portPath: path,
-        protocol: Number(parts[3] ?? 0),
-        serial: parts[4] ?? "",
-        cells,
-        columns,
-        rows,
-        keyWidth,
-        keyHeight,
-        pages,
-        cacheSlots: fields.get("cache") ?? 8,
-        persistentCache: fields.get("storage") === 1,
-        live: fields.get("live") === 1,
-        drag: fields.get("drag") === 1,
-        wheel: fields.get("wheel") === 1,
-        dial: fields.get("dial") === 1,
-        warm: fields.get("warm") === 1,
-        block: fields.get("block"),
-        slide: fields.get("slide") === 1,
-        // Reported from protocol 7 on; older firmware has no version to show.
-        firmwareVersion: parts
-            .slice(5)
-            .find((part) => /^fw=[\w.+-]{1,48}$/.test(part))
-            ?.slice(3),
-        resetReason: parts
-            .slice(5)
-            .find((part) => /^reset=[a-z]{1,16}$/.test(part))
-            ?.slice(6),
-    };
-}
-
-/**
- * Read an unsolicited line from the deck.
- *
- * `EV <page> <cell> DOWN|UP` for a press, `EV <page> <cell> MOVE <y>` for a
- * finger moving on a key the deck was asked about with `DRAG`,
- * `EV <page> <cell> WHEEL <index>` for a wheel it came to rest, `PAGE <n>` when
- * the deck navigates. Returns null for anything else, which is most lines -
- * the deck also prints human-readable diagnostics that are none of this app's
- * business.
- */
-export function parseEvent(line: string): DeckEvent | null {
-    if (/^BOOT decky [3-7]$/.test(line)) return { kind: "reset", at: Date.now() };
-    const parts = line.split(/\s+/);
-
-    if (parts[0] === "EV" && parts.length >= 4) {
-        const page = Number(parts[1]);
-        const cell = Number(parts[2]);
-        const edge = parts[3];
-        const key =
-            Number.isInteger(page) &&
-            Number.isInteger(cell) &&
-            page >= 0 &&
-            cell >= 0 &&
-            cell < 15 &&
-            page < 64;
-        if (key && (edge === "DOWN" || edge === "UP"))
-            return { kind: "key", page, cell, down: edge === "DOWN", at: Date.now() };
-        const value = Number(parts[4]);
-        if (key && edge === "MOVE" && Number.isInteger(value) && Math.abs(value) < 10_000)
-            return { kind: "move", page, cell, y: value, at: Date.now() };
-        if (key && edge === "WHEEL" && Number.isInteger(value) && value >= 0 && value < 1000)
-            return { kind: "wheel", page, cell, index: value, at: Date.now() };
-        if (key && edge === "VALUE" && Number.isInteger(value) && value >= 0 && value <= 1000)
-            return { kind: "value", page, cell, value, at: Date.now() };
-        return null;
-    }
-
-    if (parts[0] === "PAGE" && parts.length >= 2) {
-        const page = Number(parts[1]);
-        if (Number.isInteger(page) && page >= 0) {
-            return { kind: "page", page, at: Date.now() };
-        }
-    }
-
-    return null;
 }
 
 export class DeckLink {
@@ -448,41 +323,57 @@ export class DeckLink {
             this.buffer = this.buffer.slice(index + 1);
 
             if (line.length > 0) {
-                // Presses are the deck talking unprompted, so they must not be
-                // handed to whoever is waiting for a reply. Without this, a key
-                // touched while the app was identifying the board would be
-                // consumed as the answer to `ID` and the deck would look like it
-                // had failed to introduce itself.
-                if (this.socket && !this.channel && line.startsWith("OK auth ")) {
-                    // The handshake's last plain-text line. Anything after it
-                    // in this packet is already encrypted, so it must not be
-                    // read as text: keep it for the channel about to open.
-                    this.afterAuth = Buffer.from(this.buffer, "latin1");
-                    this.buffer = "";
-                    const waiter = this.waiters.shift();
-                    if (waiter) waiter(line);
-                    else this.lines.push(line);
-                    return;
-                }
-                const event = parseEvent(line);
-                if (event !== null) {
-                    if (!this.socket || this.authenticated) this.onEvent?.(event);
-                } else if (DECK_NOISE.test(line)) {
-                    // What the deck prints when it crashes or starts: never a
-                    // reply, and worth keeping - it says why.
-                    this.onNoise?.(line);
-                } else {
-                    const waiter = this.waiters.shift();
-                    if (waiter) waiter(line);
-                    else if (/^(OK|ERR|READY|A|CHALLENGE)( |$)/.test(line)) {
-                        this.lines.push(line);
-                        if (this.lines.length > 64) this.lines.shift();
-                    }
-                }
+                const read = this.classify(line);
+                (this.readers[read.kind] as (read: DeckLine) => void)(read);
             }
             index = this.buffer.indexOf("\n");
         }
     }
+
+    /**
+     * What a line is. Presses are the deck talking unprompted, so they must not
+     * be handed to whoever is waiting for a reply. Without this, a key touched
+     * while the app was identifying the board would be consumed as the answer
+     * to `ID` and the deck would look like it had failed to introduce itself.
+     */
+    private classify(line: string): DeckLine {
+        if (this.socket && !this.channel && line.startsWith("OK auth "))
+            return { kind: "handshake", line };
+        const event = parseEvent(line);
+        if (event !== null) return { kind: "event", event };
+        if (DECK_NOISE.test(line)) return { kind: "noise", line };
+        return { kind: "reply", line };
+    }
+
+    /** Who each kind of line is for. */
+    private readonly readers: {
+        [K in DeckLine["kind"]]: (read: Extract<DeckLine, { kind: K }>) => void;
+    } = {
+        // The handshake's last plain-text line. Anything after it in this
+        // packet is already encrypted, so it must not be read as text: keep it
+        // for the channel about to open. Reading this packet stops there.
+        handshake: ({ line }) => {
+            this.afterAuth = Buffer.from(this.buffer, "latin1");
+            this.buffer = "";
+            const waiter = this.waiters.shift();
+            if (waiter) waiter(line);
+            else this.lines.push(line);
+        },
+        event: ({ event }) => {
+            if (!this.socket || this.authenticated) this.onEvent?.(event);
+        },
+        // What the deck prints when it crashes or starts: never a reply, and
+        // worth keeping - it says why.
+        noise: ({ line }) => this.onNoise?.(line),
+        reply: ({ line }) => {
+            const waiter = this.waiters.shift();
+            if (waiter) waiter(line);
+            else if (/^(OK|ERR|READY|A|CHALLENGE)( |$)/.test(line)) {
+                this.lines.push(line);
+                if (this.lines.length > 64) this.lines.shift();
+            }
+        },
+    };
 
     private nextLine(timeoutMs: number): Promise<string> {
         const buffered = this.lines.shift();

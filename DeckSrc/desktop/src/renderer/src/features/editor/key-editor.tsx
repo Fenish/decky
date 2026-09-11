@@ -1,19 +1,94 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { Check, ChevronLeft, Play, Plus, Trash2, X } from "lucide-react";
-import type { Action, DeckPage, KeyConfig } from "../../../../shared/config";
+import type { Action, DeckPage, KeyConfig, Step } from "../../../../shared/config";
 import { appearanceOf } from "../../../../shared/config";
 import { ArtworkPreview } from "../artwork/artwork-preview";
 import { WidgetPreview } from "../widgets/widget-preview";
 import { WidgetSettings } from "../widgets/widget-settings";
-import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets";
+import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 import type { WidgetState } from "../../../../shared/widgets";
 import { AppearanceEditor } from "../artwork/appearance-editor";
 import { ActionPicker, ACTION_CHOICES } from "./action-picker";
 import type { PickerPanel } from "./action-picker";
-import { defaultAction } from "./actions";
+import { ACTION_KINDS, defaultAction } from "./actions";
 import { MacroEditor } from "./macro-editor";
 import { StepFields } from "./step-fields";
 export type EditorTab = "action" | "appearance";
+/** What the settings for one kind of action are drawn from. */
+interface PanelProps<A extends Action> {
+    /** The key being edited, with its action as that kind. */
+    value: KeyConfig & { action: A };
+    /** Gives the key a new action. */
+    action: (next: Action) => void;
+    pages: DeckPage[];
+    reservedHotkeys: string[];
+    onCreatePage: () => void;
+    onError: (message: string) => void;
+}
+/** Every kind of step is set with the same fields. */
+const stepPanel = ({ value, action, reservedHotkeys, onError }: PanelProps<Step>): ReactNode => (
+    <StepFields step={value.action} taken={reservedHotkeys} onChange={action} onError={onError} />
+);
+/**
+ * The settings under the Action type list, for each kind of action. Each is
+ * drawn in place rather than as a component of its own, so a key changing from
+ * one kind of step to another keeps the same fields.
+ */
+const ACTION_PANELS: {
+    [K in Action["kind"]]: (props: PanelProps<Extract<Action, { kind: K }>>) => ReactNode;
+} = {
+    hotkey: stepPanel,
+    program: stepPanel,
+    website: stepPanel,
+    script: stepPanel,
+    delay: stepPanel,
+    macro: ({ value, action, reservedHotkeys, onError }) => (
+        <MacroEditor
+            steps={value.action.steps}
+            reservedHotkeys={reservedHotkeys}
+            onChange={(steps) => action({ kind: "macro", steps })}
+            onError={onError}
+        />
+    ),
+    page: ({ value, action, pages, onCreatePage }) => (
+        <div className="page-action-fields">
+            <select
+                aria-label="Destination page"
+                value={value.action.pageId}
+                onChange={(e) => action({ kind: "page", pageId: e.target.value })}
+            >
+                {pages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                        {page.name}
+                    </option>
+                ))}
+            </select>
+            <button className="add-step" onClick={onCreatePage}>
+                <Plus size={18} />
+                Create page
+            </button>
+        </div>
+    ),
+    widget: ({ value, action }) => (
+        <WidgetSettings
+            widget={value.action.widget}
+            look={{
+                background: value.background ?? "#000000",
+                color: value.color,
+                label: value.label,
+            }}
+            onChange={(widget) => action({ kind: "widget", widget })}
+        />
+    ),
+};
+/** The settings for the key's action, by its kind. */
+function actionPanel(props: PanelProps<Action>): ReactNode {
+    const panel = ACTION_PANELS[props.value.action.kind] as (
+        props: PanelProps<Action>,
+    ) => ReactNode;
+    return panel(props);
+}
 interface EditorProps {
     value: KeyConfig | null;
     assigned: boolean;
@@ -69,8 +144,7 @@ export function KeyEditor({
             onChange({
                 ...value,
                 action: next,
-                behavior:
-                    next.kind === "page" || next.kind === "widget" ? "normal" : value.behavior,
+                behavior: ACTION_KINDS[next.kind].toggles ? value.behavior : "normal",
                 label:
                     next.kind === "program" && next.path && value.label === "Program"
                         ? (next.name ?? value.label).slice(0, 40)
@@ -148,7 +222,7 @@ export function KeyEditor({
                     panel={panel}
                     onPanel={setPanel}
                     onSelect={(kind) => {
-                        const choice = ACTION_CHOICES.find((c) => c.kind === kind)!;
+                        const choice = ACTION_KINDS[kind];
                         setPickedIn("actions");
                         onChange({
                             label: choice.label,
@@ -192,9 +266,7 @@ export function KeyEditor({
                                 Normal
                             </button>
                             <button
-                                disabled={
-                                    value.action.kind === "page" || value.action.kind === "widget"
-                                }
+                                disabled={!ACTION_KINDS[value.action.kind].toggles}
                                 className={value.behavior === "toggle" ? "active" : ""}
                                 onClick={() =>
                                     onChange({
@@ -249,53 +321,16 @@ export function KeyEditor({
                                             {item.label}
                                         </option>
                                     ))}
-                                    <option value="widget">Widget</option>
+                                    <option value="widget">{ACTION_KINDS.widget.label}</option>
                                 </select>
-                                {value.action.kind === "widget" ? (
-                                    <WidgetSettings
-                                        widget={value.action.widget}
-                                        look={{
-                                            background: value.background ?? "#000000",
-                                            color: value.color,
-                                            label: value.label,
-                                        }}
-                                        onChange={(widget) => action({ kind: "widget", widget })}
-                                    />
-                                ) : value.action.kind === "macro" ? (
-                                    <MacroEditor
-                                        steps={value.action.steps}
-                                        reservedHotkeys={reservedHotkeys}
-                                        onChange={(steps) => action({ kind: "macro", steps })}
-                                        onError={onError}
-                                    />
-                                ) : value.action.kind === "page" ? (
-                                    <div className="page-action-fields">
-                                        <select
-                                            aria-label="Destination page"
-                                            value={value.action.pageId}
-                                            onChange={(e) =>
-                                                action({ kind: "page", pageId: e.target.value })
-                                            }
-                                        >
-                                            {pages.map((page) => (
-                                                <option key={page.id} value={page.id}>
-                                                    {page.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <button className="add-step" onClick={onCreatePage}>
-                                            <Plus size={18} />
-                                            Create page
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <StepFields
-                                        step={value.action}
-                                        taken={reservedHotkeys}
-                                        onChange={action}
-                                        onError={onError}
-                                    />
-                                )}
+                                {actionPanel({
+                                    value,
+                                    action,
+                                    pages,
+                                    reservedHotkeys,
+                                    onCreatePage,
+                                    onError,
+                                })}
                             </>
                         ) : (
                             <>

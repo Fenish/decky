@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createConfig } from "../../../shared/config";
 import type { DeckConfig, KeyStates, DeckPage } from "../../../shared/config";
-import type { DeckStatus, PageUpload } from "../../../shared/api";
+import type { DeckEvent, DeckStatus, PageUpload } from "../../../shared/api";
 import { pageFrames, pageToggleFrames } from "../features/artwork/artwork";
 import { useWidgetLive, widgetWarmup } from "../features/widgets/use-widget-live";
 import { useCountdownAlarms } from "../features/widgets/use-countdown-alarms";
 import type { WidgetStates } from "../../../shared/widgets";
 const RETRY_MS = 4000;
+/** Handlers for some kinds of deck event, each taking its event as that kind. */
+type DeckEventHandlers = {
+    [K in DeckEvent["kind"]]?: (event: Extract<DeckEvent, { kind: K }>) => void;
+};
 export function useDecky() {
     const [config, setConfig] = useState<DeckConfig>(createConfig);
     const [status, setStatus] = useState<DeckStatus>({ connected: false });
@@ -137,22 +141,30 @@ export function useDecky() {
             void check();
         };
         window.addEventListener("focus", focus);
+        // What the window does with what the deck says. The main process keeps
+        // wheels, dials and finger movement to itself, and a page event needs
+        // nothing here.
+        const deckEvents: DeckEventHandlers = {
+            key: (event) => setPressedCell(event.down ? event.cell : null),
+            fallback: () => notify("USB unplugged. Decky is continuing over Wi-Fi."),
+            reset: () => {
+                warmed.current = "";
+                synced.current = "";
+                setDeviceEpoch((value) => value + 1);
+                void check();
+            },
+            ports: () => {
+                // A check already under way listed the ports before this one arrived.
+                void (request.current ?? Promise.resolve()).then(() => check());
+            },
+        };
         const subscriptions = [
             window.deck.onConfig(setConfig),
             window.deck.onKeyStates(setKeyStates),
             window.deck.onWidgetStates(setWidgetStates),
             window.deck.onEvent((event) => {
-                if (event.kind === "key") setPressedCell(event.down ? event.cell : null);
-                else if (event.kind === "fallback")
-                    notify("USB unplugged. Decky is continuing over Wi-Fi.");
-                else if (event.kind === "reset") {
-                    warmed.current = "";
-                    synced.current = "";
-                    setDeviceEpoch((value) => value + 1);
-                    void check();
-                } else if (event.kind === "ports")
-                    // A check already under way listed the ports before this one arrived.
-                    void (request.current ?? Promise.resolve()).then(() => check());
+                const handle = deckEvents[event.kind] as ((event: DeckEvent) => void) | undefined;
+                handle?.(event);
             }),
             window.deck.onActivity((event) => {
                 if (!event.ok) notify(event.message);

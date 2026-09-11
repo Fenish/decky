@@ -63,6 +63,29 @@ export function write(
     ctx.textAlign = "center";
 }
 
+/** Text as large as fits: `share` of the area's height, shrunk to its width. */
+export function bigText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    color: string,
+    area: Area,
+    share: number,
+    weight: number,
+    y = area.y + area.h / 2,
+): number {
+    let size = Math.round(area.h * share);
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    const room = area.w * 0.88;
+    const width = ctx.measureText(text).width;
+    if (width > room) {
+        size = Math.floor((size * room) / width);
+        ctx.font = `${weight} ${size}px ${FONT}`;
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(text, area.x + area.w / 2, y);
+    return size;
+}
+
 // Lucide's 24-unit icons; rects and circles written as paths.
 const ICONS: Record<string, string[]> = {
     volume: [
@@ -194,6 +217,46 @@ export function ring(
         ctx.stroke();
     }
     ctx.restore();
+}
+
+/**
+ * A timer's or a pomodoro's ring, as large as `area` allows: its track, and
+ * its arc from the top clockwise to `progress`.
+ */
+export function timeRing(
+    ctx: CanvasRenderingContext2D,
+    area: Area,
+    color: string,
+    progress: number | null,
+): { cx: number; cy: number; r: number } {
+    const cx = area.x + area.w / 2;
+    const cy = area.y + area.h / 2;
+    const r = Math.min(area.w, area.h) * 0.4;
+    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.lineCap = "round";
+    ctx.strokeStyle = fade(color, 0.18);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    if (progress !== null && progress > 0) {
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, progress));
+        ctx.stroke();
+    }
+    return { cx, cy, r };
+}
+
+export function pauseMark(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number,
+    color: string,
+): void {
+    ctx.fillStyle = color;
+    ctx.fillRect(x - size * 0.55, y - size / 2, size * 0.35, size);
+    ctx.fillRect(x + size * 0.2, y - size / 2, size * 0.35, size);
 }
 
 const covers = new Map<string, HTMLImageElement>();

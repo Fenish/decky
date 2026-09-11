@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Check, FolderOpen, LoaderCircle } from "lucide-react";
 import type { Step } from "../../../../shared/config";
@@ -117,6 +118,28 @@ export function ProgramPicker({
         setActive(0);
         setOpen(true);
     };
+    // The keys that work the list from the search field; any other key just types.
+    const keys: Record<string, (event: KeyboardEvent<HTMLInputElement>) => void> = {
+        Escape: (event) => {
+            event.preventDefault();
+            setOpen(false);
+        },
+        ArrowDown: (event) => {
+            event.preventDefault();
+            if (!open) show();
+            else setActive((index) => Math.min(index + 1, Math.max(0, visible.length - 1)));
+        },
+        ArrowUp: (event) => {
+            event.preventDefault();
+            setActive((index) => Math.max(0, index - 1));
+        },
+        Enter: (event) => {
+            if (open && visible[active]) {
+                event.preventDefault();
+                choose(visible[active]);
+            }
+        },
+    };
     return (
         <div className="program-picker" ref={anchor}>
             <div className="control-field">
@@ -147,23 +170,7 @@ export function ProgramPicker({
                         }, 0);
                     }}
                     onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                            event.preventDefault();
-                            setOpen(false);
-                        } else if (event.key === "ArrowDown") {
-                            event.preventDefault();
-                            if (!open) show();
-                            else
-                                setActive((index) =>
-                                    Math.min(index + 1, Math.max(0, visible.length - 1)),
-                                );
-                        } else if (event.key === "ArrowUp") {
-                            event.preventDefault();
-                            setActive((index) => Math.max(0, index - 1));
-                        } else if (event.key === "Enter" && open && visible[active]) {
-                            event.preventDefault();
-                            choose(visible[active]);
-                        }
+                        if (Object.hasOwn(keys, event.key)) keys[event.key]!(event);
                     }}
                 />
                 {step.path && <Check className="program-selected" size={14} />}

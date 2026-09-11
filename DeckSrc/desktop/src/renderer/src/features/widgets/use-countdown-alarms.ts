@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { isWidgetKey, keyAddress } from "../../../../shared/config";
 import type { DeckConfig } from "../../../../shared/config";
-import { countdownEnd } from "../../../../shared/widgets";
 import type { WidgetStates } from "../../../../shared/widgets";
 import kalimba from "../../assets/sounds/kalimba.wav";
+import { viewOf } from "./kinds/registry";
 
 // One cycle of the kalimba, 2 s long, its tail faded to silence: looped, it
 // plays every 2 s.
@@ -35,10 +35,9 @@ export function useCountdownAlarms(config: DeckConfig, states: WidgetStates): vo
         for (const page of config.pages)
             for (const [cell, key] of Object.entries(page.keys)) {
                 if (key.action.kind !== "widget" || !isWidgetKey(page, Number(cell))) continue;
-                const end = countdownEnd(
-                    key.action.widget,
-                    states[keyAddress(page.id, Number(cell))],
-                );
+                const widget = key.action.widget;
+                const state = states[keyAddress(page.id, Number(cell))];
+                const end = viewOf(widget).alarm?.(widget, state) ?? null;
                 if (end !== null && end >= opened - LATE_MS) ends.push(end);
             }
         ring(ends.some((end) => end <= at));

@@ -11,7 +11,8 @@
  *     u16 the text's width, u16 colour (RGB565),
  *     then its coverage, the text's width x h bytes, row by row.
  *
- * firmware/src/slide.cpp reads it; slideOffset is how it moves there.
+ * firmware/src/keys/text/sliding_text.cpp reads it; slideOffset is how it
+ * moves there.
  *--------------------------------------------------------------*/
 
 export interface SlideFeel {

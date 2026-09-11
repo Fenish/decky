@@ -1,23 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
+import { formatDuration, runTime } from "../src/shared/widgets";
 import {
-    clockParts,
-    countdownEnd,
-    daysUntil,
     defaultWidget,
-    formatDuration,
     nextChange,
-    pomodoroSkip,
-    pomodoroView,
-    runTime,
+    validWidget,
+    WIDGET_CHOICES,
+} from "../src/shared/widgets/registry";
+import { clockParts } from "../src/shared/widgets/clock";
+import {
+    countdownEnd,
     stepTimer,
     TIMER_STEPS,
     timerSeconds,
     timerView,
-    validWidget,
-    WIDGET_CHOICES,
-} from "../src/shared/widgets";
+} from "../src/shared/widgets/timer";
+import { pomodoroSkip, pomodoroView } from "../src/shared/widgets/pomodoro";
+import { daysUntil } from "../src/shared/widgets/countdown";
 import type { Widget } from "../src/shared/widgets";
-import { dialTimer, PingWatcher, pingHost, pressWidget, WidgetStore } from "../src/main/widgets";
+import { dialTimer, pressWidget, WidgetStore } from "../src/main/widgets/widget-state";
+import { PingWatcher, pingHost } from "../src/main/widgets/ping";
 import { createConfig, validateConfig } from "../src/shared/config";
 
 const MINUTE = 60_000;

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { volumeFillMap, volumeGeometry } from "../src/renderer/src/features/widgets/draw-sound";
+import {
+    volumeFillMap,
+    volumeGeometry,
+} from "../src/renderer/src/features/widgets/kinds/volume/draw-volume";
 
 const W = 118;
 const H = 123;

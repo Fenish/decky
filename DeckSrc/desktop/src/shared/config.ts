@@ -1,6 +1,6 @@
 import { validProgramTarget } from "./programs";
-import { validWidget } from "./widgets";
 import type { Widget } from "./widgets";
+import { retireWidget, validWidget } from "./widgets/registry";
 export const CELL_COUNT = 15;
 export const BACK_CELL = 10;
 export type Step =
@@ -102,47 +102,55 @@ const string = (v: unknown, max = 256): v is string =>
     !Array.from(v).some((c) => c.charCodeAt(0) < 32);
 const validLabel = (v: unknown): v is string =>
     typeof v === "string" && v.length <= 40 && !Array.from(v).some((c) => c.charCodeAt(0) < 32);
+/** Whether a step's settings are valid, for each kind of step. */
+const STEP_CHECKS: { [K in Step["kind"]]: (v: Record<string, unknown>) => boolean } = {
+    hotkey: (v) => string(v.keys, 64) && (v.auto === undefined || typeof v.auto === "boolean"),
+    website: (v) => string(v.url, 2048) && validWebsite(v.url),
+    program: (v) =>
+        validProgramTarget(v.path) &&
+        (v.name === undefined ||
+            (typeof v.name === "string" &&
+                v.name.length <= 160 &&
+                !Array.from(v.name).some((c) => c.charCodeAt(0) < 32))),
+    script: (v) =>
+        string(v.path, 1024) &&
+        /^(?:[a-z]:[\\/]|\/)/i.test(v.path) &&
+        /\.ps1$/i.test(v.path) &&
+        (v.background === undefined || typeof v.background === "boolean") &&
+        (v.wait === undefined || typeof v.wait === "boolean") &&
+        (v.timeoutMs === undefined ||
+            (Number.isInteger(v.timeoutMs) &&
+                Number(v.timeoutMs) >= 0 &&
+                Number(v.timeoutMs) <= 2147483647)),
+    delay: (v) => Number.isInteger(v.ms) && Number(v.ms) >= 50 && Number(v.ms) <= 30000,
+};
+/** Whether an action's settings are valid, for each kind of action; `ids` are the profile's pages. */
+const ACTION_CHECKS: {
+    [K in Action["kind"]]: (v: Record<string, unknown>, ids: Set<string>) => boolean;
+} = {
+    ...STEP_CHECKS,
+    macro: (v) =>
+        Array.isArray(v.steps) &&
+        v.steps.length > 0 &&
+        v.steps.length <= 32 &&
+        v.steps.every(validStep),
+    page: (v, ids) => ids.has(String(v.pageId)),
+    widget: (v) => validWidget(v.widget),
+};
+/** The table's entry for a kind read from outside - a saved profile - if it has one. */
+function checkFor<T>(checks: Record<string, T>, kind: unknown): T | undefined {
+    return typeof kind === "string" && Object.hasOwn(checks, kind) ? checks[kind] : undefined;
+}
 function validStep(v: unknown): v is Step {
-    if (!record(v)) return false;
-    switch (v.kind) {
-        case "hotkey":
-            return string(v.keys, 64) && (v.auto === undefined || typeof v.auto === "boolean");
-        case "website":
-            return string(v.url, 2048) && validWebsite(v.url);
-        case "program":
-            return (
-                validProgramTarget(v.path) &&
-                (v.name === undefined ||
-                    (typeof v.name === "string" &&
-                        v.name.length <= 160 &&
-                        !Array.from(v.name).some((c) => c.charCodeAt(0) < 32)))
-            );
-        case "script":
-            return (
-                string(v.path, 1024) &&
-                /^(?:[a-z]:[\\/]|\/)/i.test(v.path) &&
-                /\.ps1$/i.test(v.path) &&
-                (v.background === undefined || typeof v.background === "boolean") &&
-                (v.wait === undefined || typeof v.wait === "boolean") &&
-                (v.timeoutMs === undefined ||
-                    (Number.isInteger(v.timeoutMs) &&
-                        Number(v.timeoutMs) >= 0 &&
-                        Number(v.timeoutMs) <= 2147483647))
-            );
-        case "delay":
-            return Number.isInteger(v.ms) && Number(v.ms) >= 50 && Number(v.ms) <= 30000;
-        default:
-            return false;
-    }
+    return record(v) && (checkFor(STEP_CHECKS, v.kind)?.(v) ?? false);
 }
 /** Widgets Decky once had and no longer does. */
 const RETIRED_WIDGETS = new Set(["network"]);
 /**
  * Drop what widgets no longer have, so a profile saved with it still loads:
- * a retired widget's key empties; a crypto price's currency and interval go
- * (prices are live, in dollars), and so does a microphone's style (there is
- * one). Changes
- * `value` in place and leaves the rest to validateConfig.
+ * a retired widget's key empties, and other widgets lose the settings their
+ * kind no longer has (retire() in shared/widgets/). Changes `value` in place
+ * and leaves the rest to validateConfig.
  */
 export function retireWidgets(value: unknown): void {
     if (!record(value) || !Array.isArray(value.pages)) return;
@@ -152,10 +160,7 @@ export function retireWidgets(value: unknown): void {
             const action = record(key) ? key.action : undefined;
             if (!record(action) || action.kind !== "widget" || !record(action.widget)) continue;
             if (RETIRED_WIDGETS.has(String(action.widget.type))) delete page.keys[cell];
-            else if (action.widget.type === "crypto") {
-                delete action.widget.currency;
-                delete action.widget.interval;
-            } else if (action.widget.type === "mic") delete action.widget.style;
+            else retireWidget(action.widget);
         }
     }
 }
@@ -217,19 +222,7 @@ export function validateConfig(value: unknown): asserts value is DeckConfig {
             )
                 throw new Error("Invalid key. Bottom-left is reserved for Back in folders.");
             const action = key.action;
-            if (
-                !record(action) ||
-                !(
-                    validStep(action) ||
-                    (action.kind === "page" && ids.has(String(action.pageId))) ||
-                    (action.kind === "widget" && validWidget(action.widget)) ||
-                    (action.kind === "macro" &&
-                        Array.isArray(action.steps) &&
-                        action.steps.length > 0 &&
-                        action.steps.length <= 32 &&
-                        action.steps.every(validStep))
-                )
-            )
+            if (!record(action) || !(checkFor(ACTION_CHECKS, action.kind)?.(action, ids) ?? false))
                 throw new Error("Complete the action settings before saving.");
             if (
                 key.behavior !== undefined &&

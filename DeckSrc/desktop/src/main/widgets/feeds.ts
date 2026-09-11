@@ -11,12 +11,14 @@
  *--------------------------------------------------------------*/
 
 import { cpus, freemem, totalmem } from "node:os";
-import { isWidgetKey, keyAddress } from "../shared/config";
-import type { DeckConfig } from "../shared/config";
-import { trackPosition } from "../shared/widgets";
-import type { Track, WidgetState } from "../shared/widgets";
-import type { WidgetStore } from "./widgets";
-import type { HostEvent, WindowsHost } from "./system/windows-host";
+import { isWidgetKey, keyAddress } from "../../shared/config";
+import type { DeckConfig } from "../../shared/config";
+import type { Track, WidgetState } from "../../shared/widgets";
+import { trackPosition } from "../../shared/widgets/media";
+import { handleWidget } from "../../shared/widgets/registry";
+import type { WidgetHandlers } from "../../shared/widgets/registry";
+import type { WidgetStore } from "./widget-state";
+import type { HostEvent, WindowsHost } from "../system/windows-host";
 import { PriceStream } from "./crypto-feed";
 import type { Socket } from "./crypto-feed";
 
@@ -108,21 +110,23 @@ export class WidgetFeeds {
         const audio: { address: string; type: "volume" | "mic" }[] = [];
         const media: string[] = [];
         const coins: { address: string; coin: string }[] = [];
+        // What each kind of widget reads; the others read nothing.
+        const reads: WidgetHandlers<[address: string], unknown> = {
+            system: (widget, address) =>
+                wanted.set(address, {
+                    key: `system ${widget.interval}`,
+                    seconds: widget.interval,
+                    run: async () => this.system(address),
+                }),
+            crypto: (widget, address) => coins.push({ address, coin: widget.coin }),
+            volume: (_widget, address) => audio.push({ address, type: "volume" }),
+            mic: (_widget, address) => audio.push({ address, type: "mic" }),
+            media: (_widget, address) => media.push(address),
+        };
         for (const page of config.pages)
             for (const [cell, key] of Object.entries(page.keys)) {
                 if (key.action.kind !== "widget" || !isWidgetKey(page, Number(cell))) continue;
-                const widget = key.action.widget;
-                const address = keyAddress(page.id, Number(cell));
-                if (widget.type === "system")
-                    wanted.set(address, {
-                        key: `system ${widget.interval}`,
-                        seconds: widget.interval,
-                        run: async () => this.system(address),
-                    });
-                else if (widget.type === "crypto") coins.push({ address, coin: widget.coin });
-                else if (widget.type === "volume" || widget.type === "mic")
-                    audio.push({ address, type: widget.type });
-                else if (widget.type === "media") media.push(address);
+                handleWidget(reads, key.action.widget, keyAddress(page.id, Number(cell)));
             }
         this.audioKeys = audio;
         this.mediaKeys = media;

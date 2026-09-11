@@ -1,7 +1,10 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { createConfig } from "../src/shared/config";
 import type { DeckConfig } from "../src/shared/config";
-import { defaultWidget, diceLabels, formatDuration, wheelValues } from "../src/shared/widgets";
+import { formatDuration } from "../src/shared/widgets";
+import { defaultWidget } from "../src/shared/widgets/registry";
+import { wheelValues } from "../src/shared/widgets/timer";
+import { diceLabels } from "../src/shared/widgets/dice";
 import { encodeLivePatch } from "../src/shared/live-patch";
 import { DICE_FEEL, DIE_FEEL, encodeWheelSpec, WHEEL_FEEL } from "../src/shared/wheel-spec";
 import { packPose } from "../src/shared/die";

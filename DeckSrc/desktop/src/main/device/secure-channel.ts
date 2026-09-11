@@ -14,7 +14,7 @@
  * could inject into the TCP stream could send commands to the deck, or fake
  * key presses that make this PC run the actions bound to them.
  *
- * The firmware side is firmware/src/secure_link.cpp; the two must agree byte
+ * The firmware side is firmware/src/security/secure_link.cpp; the two must agree byte
  * for byte, and tests/secure-channel.test.ts pins the format.
  *--------------------------------------------------------------*/
 

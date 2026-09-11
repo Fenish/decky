@@ -4,19 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "../src/shared/config";
 import type { DeckConfig } from "../src/shared/config";
-import {
-    deckTurned,
-    diceLabels,
-    formatPrice,
-    listOptions,
-    trackPosition,
-    validWidget,
-} from "../src/shared/widgets";
+import { deckTurned, validWidget } from "../src/shared/widgets/registry";
+import { trackPosition } from "../src/shared/widgets/media";
+import { formatPrice } from "../src/shared/widgets/crypto";
+import { diceLabels, listOptions } from "../src/shared/widgets/dice";
 import type { Widget } from "../src/shared/widgets";
-import { CpuMeter, HISTORY, keep, WidgetFeeds } from "../src/main/widget-feeds";
-import { ARROW_MS, pairOf, PriceStream, readTicker } from "../src/main/crypto-feed";
-import type { Socket } from "../src/main/crypto-feed";
-import { WidgetStore } from "../src/main/widgets";
+import { CpuMeter, HISTORY, keep, WidgetFeeds } from "../src/main/widgets/feeds";
+import { ARROW_MS, pairOf, PriceStream, readTicker } from "../src/main/widgets/crypto-feed";
+import type { Socket } from "../src/main/widgets/crypto-feed";
+import { WidgetStore } from "../src/main/widgets/widget-state";
 import type { HostEvent, WindowsHost } from "../src/main/system/windows-host";
 
 describe("how readings read", () => {

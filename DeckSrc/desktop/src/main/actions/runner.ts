@@ -47,23 +47,30 @@ export class ActionRunner {
         }
     }
     private async step(step: Step, signal: AbortSignal): Promise<void> {
-        if (step.kind === "delay") {
+        const run = this.steps[step.kind] as (step: Step, signal: AbortSignal) => Promise<void>;
+        await run(step, signal);
+    }
+    /** How each kind of step runs. */
+    private readonly steps: {
+        [K in Step["kind"]]: (
+            step: Extract<Step, { kind: K }>,
+            signal: AbortSignal,
+        ) => Promise<void>;
+    } = {
+        delay: async (step, signal) => {
             await delay(step.ms, undefined, { signal });
-            return;
-        }
-        if (step.kind === "hotkey") {
+        },
+        hotkey: async (step, signal) => {
             const error = this.keyboard.send(step.keys);
             if (error) throw new Error(error);
             await delay(100, undefined, { signal });
-            return;
-        }
-        if (step.kind === "website") {
+        },
+        website: async (step) => {
             if (!validWebsite(step.url))
                 throw new Error("Only HTTP and HTTPS websites are supported.");
             await shell.openExternal(step.url);
-            return;
-        }
-        if (step.kind === "program") {
+        },
+        program: async (step) => {
             if (!validProgramTarget(step.path))
                 throw new Error("Select a program before running this key.");
             if (/\.lnk$/i.test(step.path)) {
@@ -91,17 +98,18 @@ export class ActionRunner {
                     resolve();
                 });
             });
-            return;
-        }
-        await access(step.path);
-        await runScript(
-            step.path,
-            {
-                background: step.background !== false,
-                wait: step.wait !== false,
-                timeoutMs: step.timeoutMs ?? 30000,
-            },
-            signal,
-        );
-    }
+        },
+        script: async (step, signal) => {
+            await access(step.path);
+            await runScript(
+                step.path,
+                {
+                    background: step.background !== false,
+                    wait: step.wait !== false,
+                    timeoutMs: step.timeoutMs ?? 30000,
+                },
+                signal,
+            );
+        },
+    };
 }

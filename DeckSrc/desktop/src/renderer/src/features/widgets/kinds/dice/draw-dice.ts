@@ -1,6 +1,6 @@
-import { diceFaces, diceLabels } from "../../../../shared/widgets";
-import type { Widget } from "../../../../shared/widgets";
-import { DICE_FEEL, drumRow } from "../../../../shared/wheel-spec";
+import { diceFaces, diceLabels } from "../../../../../../shared/widgets/dice";
+import type { DiceWidget } from "../../../../../../shared/widgets/dice";
+import { DICE_FEEL, drumRow } from "../../../../../../shared/wheel-spec";
 import {
     CORNER,
     DIE_PIPS,
@@ -12,13 +12,11 @@ import {
     restingPose,
     unpackPose,
     VIEW_TILT,
-} from "../../../../shared/die";
-import type { DiePose } from "../../../../shared/die";
-import { fitSize, FONT } from "./canvas-kit";
-import type { Area } from "./canvas-kit";
-import type { WidgetLook, WidgetMoment } from "./draw-widget";
-
-type Dice = Extract<Widget, { type: "dice" }>;
+} from "../../../../../../shared/die";
+import type { DiePose } from "../../../../../../shared/die";
+import { fitSize, FONT } from "../../canvas-kit";
+import type { Area } from "../../canvas-kit";
+import type { WidgetLook, WidgetMoment } from "../../draw-widget";
 
 /** A colour (#rrggbb) lit by `light`: 1 as it is, each channel held in range. */
 function lit(hex: string, light: number): string {
@@ -38,7 +36,8 @@ export function pipColor(body: string): string {
 /**
  * A die lying still in `pose` on the key `area`: its soft shadow, then each
  * face the eye sees - lit by how it faces the light, a touch darker at its
- * rounded edges - with its pips. The deck draws it the same way (wheel.cpp).
+ * rounded edges - with its pips. The deck draws it the same way
+ * (firmware/src/keys/die/die_render.cpp).
  */
 export function drawDie(
     ctx: CanvasRenderingContext2D,
@@ -103,7 +102,7 @@ export function diePose(value: number | undefined, rest: number | undefined): Di
 }
 
 /** Where a dice drum's words sit: a coin, yes or no, or a list. */
-export function diceGeometry(ctx: CanvasRenderingContext2D, widget: Dice, area: Area) {
+export function diceGeometry(ctx: CanvasRenderingContext2D, widget: DiceWidget, area: Area) {
     const center = Math.round(area.y + area.h / 2);
     const longest = diceFaces(widget).reduce((a, b) => (b.length > a.length ? b : a), "");
     const font = Math.min(
@@ -120,7 +119,7 @@ export function diceGeometry(ctx: CanvasRenderingContext2D, widget: Dice, area: 
  */
 export function drawDice(
     ctx: CanvasRenderingContext2D,
-    widget: Dice,
+    widget: DiceWidget,
     look: WidgetLook,
     area: Area,
     moment?: WidgetMoment,

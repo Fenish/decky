@@ -77,7 +77,8 @@ vi.mock("serialport", async () => {
     }
     return { SerialPort: Port };
 });
-import { DeckLink, parseEvent, parseIdentity } from "../src/main/device/serial";
+import { DeckLink } from "../src/main/device/serial";
+import { parseEvent, parseIdentity } from "../src/main/device/protocol";
 describe("finger movement", () => {
     it("reads MOVE lines, and drag=1 as the deck offering them", () => {
         expect(parseEvent("EV 0 6 MOVE 42")).toMatchObject({

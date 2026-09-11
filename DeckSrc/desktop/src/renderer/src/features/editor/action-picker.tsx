@@ -1,22 +1,21 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, LayoutGrid, Search, Volume2 } from "lucide-react";
 import type { Action } from "../../../../shared/config";
-import { WIDGET_CHOICES } from "../../../../shared/widgets";
+import { WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 import type { WidgetType } from "../../../../shared/widgets";
 import { KeyIcon } from "../../components/key-icon";
+import { ACTION_KINDS } from "./actions";
 import "../widgets/widgets.css";
+/** The actions to pick from, in the order the picker lists them. */
 export const ACTION_CHOICES: {
     kind: Exclude<Action["kind"], "widget">;
     label: string;
     icon: string;
-}[] = [
-    { kind: "hotkey", label: "Hotkey", icon: "keyboard" },
-    { kind: "program", label: "Program", icon: "program" },
-    { kind: "page", label: "Page", icon: "page" },
-    { kind: "macro", label: "Macro", icon: "macro" },
-    { kind: "website", label: "Website", icon: "website" },
-    { kind: "script", label: "Script", icon: "script" },
-];
+}[] = (["hotkey", "program", "page", "macro", "website", "script"] as const).map((kind) => ({
+    kind,
+    label: ACTION_KINDS[kind].label,
+    icon: ACTION_KINDS[kind].icon,
+}));
 /** The picker's two panels: actions, with widgets one step in. */
 export type PickerPanel = "actions" | "widgets";
 function WidgetOptions({

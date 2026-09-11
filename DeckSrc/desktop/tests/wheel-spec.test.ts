@@ -10,7 +10,7 @@ import {
 import type { DialSpec, DieSpec, DrumSpec } from "../src/shared/wheel-spec";
 import { dieSeen, packPose, poseRotation, unpackPose } from "../src/shared/die";
 import { encodeLivePatch } from "../src/shared/live-patch";
-import { TIMER_STEPS, wheelValues } from "../src/shared/widgets";
+import { TIMER_STEPS, wheelValues } from "../src/shared/widgets/timer";
 
 const W = 118;
 const H = 123;

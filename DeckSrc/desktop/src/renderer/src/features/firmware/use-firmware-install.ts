@@ -8,25 +8,32 @@ export type InstallState =
     | { phase: "done"; message: string }
     | { phase: "failed"; message: string };
 
-/** A short, human line for where an install has got to. */
-export function describeProgress(progress: FirmwareProgress | null): {
+/** Where an install has got to: a line to show, and how far along the bar is. */
+interface ProgressLine {
     text: string;
     fraction: number | null;
-} {
+}
+
+/** The line for each stage of an install, each taking its progress as that stage. */
+const STAGES: {
+    [S in FirmwareProgress["stage"]]: (
+        progress: Extract<FirmwareProgress, { stage: S }>,
+    ) => ProgressLine;
+} = {
+    downloading: () => ({ text: "Downloading from GitHub…", fraction: null }),
+    connecting: () => ({ text: "Starting the deck's bootloader…", fraction: null }),
+    writing: (progress) => ({
+        text: `Writing and verifying part ${progress.part} of ${progress.parts}`,
+        fraction: progress.total ? progress.written / progress.total : null,
+    }),
+    restarting: () => ({ text: "Restarting the deck…", fraction: 1 }),
+};
+
+/** A short, human line for where an install has got to. */
+export function describeProgress(progress: FirmwareProgress | null): ProgressLine {
     if (!progress) return { text: "Preparing…", fraction: null };
-    switch (progress.stage) {
-        case "downloading":
-            return { text: "Downloading from GitHub…", fraction: null };
-        case "connecting":
-            return { text: "Starting the deck's bootloader…", fraction: null };
-        case "writing":
-            return {
-                text: `Writing and verifying part ${progress.part} of ${progress.parts}`,
-                fraction: progress.total ? progress.written / progress.total : null,
-            };
-        case "restarting":
-            return { text: "Restarting the deck…", fraction: 1 };
-    }
+    const describe = STAGES[progress.stage] as (progress: FirmwareProgress) => ProgressLine;
+    return describe(progress);
 }
 
 const clean = (error: unknown): string =>

@@ -6,9 +6,9 @@
  * Binance's REST ticker, else CoinGecko, every minute.
  *--------------------------------------------------------------*/
 
-import { COINS } from "../shared/widgets";
-import type { WidgetState } from "../shared/widgets";
-import type { WidgetStore } from "./widgets";
+import type { WidgetState } from "../../shared/widgets";
+import { COINS } from "../../shared/widgets/crypto";
+import type { WidgetStore } from "./widget-state";
 
 const STREAM = "wss://data-stream.binance.vision/stream?streams=";
 const REST = "https://data-api.binance.vision/api/v3";

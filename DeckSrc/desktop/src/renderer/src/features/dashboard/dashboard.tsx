@@ -1,27 +1,19 @@
 import type { KeyLocation } from "../../../../shared/key-layout";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import {
-    ChevronDown,
-    ChevronRight,
-    Copy,
-    Layers,
-    MousePointer2,
-    Plus,
-    Settings,
-    X,
-} from "lucide-react";
-import type { DeckConfig, DeckPage, KeyConfig, KeyStates } from "../../../../shared/config";
+import { ChevronDown, Copy, Layers, MousePointer2, Plus, Settings, X } from "lucide-react";
+import type { DeckConfig, KeyConfig, KeyStates } from "../../../../shared/config";
 import { BACK_CELL, displayedKey, keyAddress } from "../../../../shared/config";
 import { hotkeysInUse } from "../../../../shared/hotkey-pool";
 import background from "../../assets/dashboard-obsidian.webp";
 import { Dialog } from "../../components/dialog";
-import { ArtworkPreview } from "../artwork/artwork-preview";
-import { WidgetPreview } from "../widgets/widget-preview";
-import { WIDGET_CHOICES } from "../../../../shared/widgets";
+import { WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 import type { WidgetStates } from "../../../../shared/widgets";
 import { KeyEditor } from "../editor/key-editor";
 import type { EditorTab } from "../editor/key-editor";
+import { KeyFace } from "./key-face";
+import { ManagePageDialog, withoutPage } from "./page-dialog";
+import type { PageDialog } from "./page-dialog";
 import { PagesPanel } from "./pages-panel";
 import { SettingsPanel } from "./settings-panel";
 import "./dashboard.css";
@@ -31,7 +23,6 @@ interface Selection {
     value: KeyConfig | null;
     dirty: boolean;
 }
-type PageDialog = { kind: "create" | "rename" | "delete"; page: DeckPage; forKey?: boolean };
 /** What a key is called to assistive technology: its label, or what it is. */
 function keyName(key: KeyConfig): string {
     const { action } = key;
@@ -266,34 +257,8 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
         if (!pageDialog) return;
         try {
             if (pageDialog.kind === "delete") {
-                const removed = new Set([pageDialog.page.id]);
-                let changed = true;
-                while (changed) {
-                    changed = false;
-                    for (const item of config.pages)
-                        if (item.parentId && removed.has(item.parentId) && !removed.has(item.id)) {
-                            removed.add(item.id);
-                            changed = true;
-                        }
-                }
-                const pages = config.pages
-                    .filter((item) => !removed.has(item.id))
-                    .map((item) => ({
-                        ...item,
-                        keys: Object.fromEntries(
-                            Object.entries(item.keys).filter(
-                                ([, key]) =>
-                                    key.action.kind !== "page" || !removed.has(key.action.pageId),
-                            ),
-                        ),
-                    }));
-                await save({
-                    ...config,
-                    pages,
-                    activePageId: removed.has(config.activePageId)
-                        ? (pageDialog.page.parentId ?? "home")
-                        : config.activePageId,
-                });
+                const { config: next, removed } = withoutPage(config, pageDialog.page);
+                await save(next);
                 if (selection && removed.has(selection.pageId)) setSelection(null);
             } else if (pageDialog.kind === "rename") {
                 if (!pageName.trim()) return;
@@ -472,35 +437,12 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                                                 openPage(key.action.pageId);
                                         }}
                                     >
-                                        {key?.action.kind === "widget" ? (
-                                            <WidgetPreview
-                                                widget={key.action.widget}
-                                                look={{
-                                                    background: key.background ?? "#000000",
-                                                    color: key.color,
-                                                    label: key.label,
-                                                }}
-                                                state={widgetStates[keyAddress(page.id, cell)]}
-                                            />
-                                        ) : key ? (
-                                            <ArtworkPreview value={key} />
-                                        ) : back ? (
-                                            <ArtworkPreview
-                                                value={{
-                                                    label: "Back",
-                                                    icon: "back",
-                                                    color: "#eee8da",
-                                                }}
-                                            />
-                                        ) : null}
-                                        {key?.action.kind === "page" && (
-                                            <ChevronRight size={13} className="folder-corner" />
-                                        )}
-                                        {key?.behavior === "toggle" && (
-                                            <span className={`key-state ${toggled ? "on" : ""}`}>
-                                                {toggled ? "ON" : "OFF"}
-                                            </span>
-                                        )}
+                                        <KeyFace
+                                            value={key}
+                                            back={back}
+                                            toggled={toggled}
+                                            widgetState={widgetStates[keyAddress(page.id, cell)]}
+                                        />
                                     </button>
                                 );
                             })}
@@ -669,64 +611,13 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                 </Dialog>
             )}
             {!hidden && pageDialog && (
-                <Dialog
-                    title={
-                        pageDialog.kind === "create"
-                            ? "Create page"
-                            : pageDialog.kind === "rename"
-                              ? "Rename page"
-                              : `Delete ${pageDialog.page.name}?`
-                    }
+                <ManagePageDialog
+                    dialog={pageDialog}
+                    name={pageName}
+                    onNameChange={setPageName}
+                    onCommit={commitPage}
                     onClose={() => setPageDialog(null)}
-                >
-                    {pageDialog.kind === "delete" ? (
-                        <>
-                            <p>Its subpages and keys linking to them will also be removed.</p>
-                            <div className="dialog-actions">
-                                <button className="button" onClick={() => setPageDialog(null)}>
-                                    Cancel
-                                </button>
-                                <button className="button danger" onClick={() => void commitPage()}>
-                                    Delete page
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <form
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                void commitPage();
-                            }}
-                        >
-                            <label className="field">
-                                Page name
-                                <input
-                                    autoFocus
-                                    maxLength={40}
-                                    value={pageName}
-                                    placeholder="OBS, Work, Music…"
-                                    onChange={(e) => setPageName(e.target.value)}
-                                />
-                            </label>
-                            <div className="dialog-actions">
-                                <button
-                                    type="button"
-                                    className="button"
-                                    onClick={() => setPageDialog(null)}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="button primary"
-                                    disabled={!pageName.trim()}
-                                >
-                                    {pageDialog.kind === "create" ? "Create page" : "Rename"}
-                                </button>
-                            </div>
-                        </form>
-                    )}
-                </Dialog>
+                />
             )}
         </div>
     );

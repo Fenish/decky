@@ -17,7 +17,7 @@
 
 import { app } from "electron";
 import { autoUpdater, CancellationToken, type ProgressInfo } from "electron-updater";
-import type { AppUpdateProgress } from "../shared/api";
+import type { AppUpdateProgress } from "../../shared/api";
 
 let download: CancellationToken | null = null;
 let cancelled = false;

@@ -11,8 +11,8 @@
  *     followed by one pixel to repeat c - 127 times. Pixels are 2 bytes, LE.
  *
  * Boxes follow each other to the end of the payload. The firmware decodes
- * them into the key's cached image (LIVE in main.cpp) - mirrored by
- * decodeLivePatch here, which the tests use.
+ * them into a key's picture for LIVE and PATCH (firmware/src/pages/patch.cpp),
+ * mirrored by decodeLivePatch here, which the tests use.
  *--------------------------------------------------------------*/
 
 const TILE = 32;

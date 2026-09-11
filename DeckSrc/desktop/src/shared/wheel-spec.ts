@@ -25,7 +25,8 @@
  *     picture, 255 for never;
  *   if it writes its number, one font size as above, holding 0-9.
  *
- * firmware/src/wheel.cpp reads both; a drum is drawn with drumRow's sums.
+ * firmware/src/keys/ reads both (drum/, dial/); a drum is drawn with
+ * drumRow's sums.
  *--------------------------------------------------------------*/
 
 import { decodeLivePatch } from "./live-patch";

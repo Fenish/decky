@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { nextChange } from "../../../../shared/widgets";
+import { nextChange } from "../../../../shared/widgets/registry";
 import type { Widget, WidgetState } from "../../../../shared/widgets";
 import { drawWidget } from "./draw-widget";
 import type { WidgetLook } from "./draw-widget";

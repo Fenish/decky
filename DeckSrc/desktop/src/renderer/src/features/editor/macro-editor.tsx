@@ -2,9 +2,10 @@ import { useState } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, X } from "lucide-react";
 import type { Step } from "../../../../shared/config";
 import { KeyIcon } from "../../components/key-icon";
-import { defaultStep } from "./actions";
+import { defaultStep, STEP_KINDS } from "./actions";
 import { StepFields } from "./step-fields";
-const TYPES = ["hotkey", "program", "website", "script", "delay"] as const;
+/** Every kind of step, in STEP_KINDS' order. */
+const TYPES = Object.keys(STEP_KINDS) as Step["kind"][];
 export function MacroEditor({
     steps,
     reservedHotkeys,
@@ -55,16 +56,7 @@ export function MacroEditor({
                         <GripVertical size={16} />
                     </span>
                     <div className="step-type">
-                        <KeyIcon
-                            name={
-                                step.kind === "hotkey"
-                                    ? "keyboard"
-                                    : step.kind === "delay"
-                                      ? "clock"
-                                      : step.kind
-                            }
-                            size={19}
-                        />
+                        <KeyIcon name={STEP_KINDS[step.kind].icon} size={19} />
                         <select
                             aria-label={`Step ${index + 1} type`}
                             value={step.kind}
@@ -83,9 +75,7 @@ export function MacroEditor({
                         >
                             {TYPES.map((kind) => (
                                 <option value={kind} key={kind}>
-                                    {kind === "hotkey"
-                                        ? "Hotkey"
-                                        : kind.charAt(0).toUpperCase() + kind.slice(1)}
+                                    {STEP_KINDS[kind].label}
                                 </option>
                             ))}
                         </select>
@@ -137,9 +127,7 @@ export function MacroEditor({
                                 setAdding(false);
                             }}
                         >
-                            {kind === "hotkey"
-                                ? "Hotkey"
-                                : kind.charAt(0).toUpperCase() + kind.slice(1)}
+                            {STEP_KINDS[kind].label}
                         </button>
                     ))}
                 </div>

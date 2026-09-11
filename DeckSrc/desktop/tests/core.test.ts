@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createConfig, validateConfig } from "../src/shared/config";
-import { crc32, parseEvent, parseIdentity } from "../src/main/device/serial";
+import { crc32 } from "../src/main/device/serial";
+import { parseEvent, parseIdentity } from "../src/main/device/protocol";
 import { toSendKeys } from "../src/main/actions/hotkeys";
 import { loadConfig, saveConfig } from "../src/main/config/store";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";

@@ -69,6 +69,17 @@ const NAMED_KEYS = new Map<string, string>([
 /** Characters SendKeys reads as syntax, so a literal one has to be braced. */
 const NEEDS_BRACES = new Set(["+", "^", "%", "~", "(", ")", "{", "}", "[", "]"]);
 
+/** SendKeys' symbol for each modifier; null for the Windows key, which it cannot send. */
+const MODIFIERS = new Map<string, string | null>([
+    ["ctrl", "^"],
+    ["control", "^"],
+    ["shift", "+"],
+    ["alt", "%"],
+    ["win", null],
+    ["meta", null],
+    ["cmd", null],
+]);
+
 /**
  * Translate a readable combination into SendKeys' notation.
  *
@@ -90,20 +101,16 @@ export function toSendKeys(hotkey: Hotkey): string | null {
     const modifiers = new Set<string>();
 
     while (parts.length > 1) {
-        const part = parts[0]!;
-        if (part === "ctrl" || part === "control") {
-            modifiers.add("^");
-        } else if (part === "shift") {
-            modifiers.add("+");
-        } else if (part === "alt") {
-            modifiers.add("%");
-        } else if (part === "win" || part === "meta" || part === "cmd") {
-            // SendKeys has no notation for the Windows key at all. Saying so is
-            // better than dropping it and sending the combination without it.
-            return null;
-        } else {
+        const symbol = MODIFIERS.get(parts[0]!);
+        if (symbol === undefined) {
             break;
         }
+        // SendKeys has no notation for the Windows key at all. Saying so is
+        // better than dropping it and sending the combination without it.
+        if (symbol === null) {
+            return null;
+        }
+        modifiers.add(symbol);
         parts.shift();
     }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { isWidgetKey, keyAddress } from "../../../../shared/config";
 import type { DeckConfig, KeyConfig } from "../../../../shared/config";
 import type { DeckStatus, Warmup } from "../../../../shared/api";
-import { deckTurned, nextChange } from "../../../../shared/widgets";
+import { deckTurned, nextChange } from "../../../../shared/widgets/registry";
 import type { WidgetStates } from "../../../../shared/widgets";
 import { widgetParts } from "../artwork/artwork";
 import { deckLook } from "./wheel";

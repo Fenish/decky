@@ -134,12 +134,12 @@ the tray menu.
   5 seconds. Tap opens Task Manager.
 - **Crypto widget:** Bitcoin, Ethereum, Solana, BNB, XRP, Dogecoin, Cardano, Avalanche or Toncoin,
   in US dollars, live: Binance's public market data (no account or key) streams a price a second
-  while it trades, over one WebSocket for all the coins shown (`src/main/crypto-feed.ts`). A coin
-  the stream is quiet about for 20 seconds is asked for over REST, and from CoinGecko if Binance is
-  out of reach. **Chart**: the coin, the day's change and the last 24 hours (hourly, refreshed each
-  hour, its last point the live price), green or red. **Ticker**: the price large, with ▲ or ▼ for
-  the move over the last minute beside the day's change, each coloured by its own direction. Tap
-  checks now. Profiles saved with a currency or interval load with them dropped.
+  while it trades, over one WebSocket for all the coins shown (`src/main/widgets/crypto-feed.ts`). A
+  coin the stream is quiet about for 20 seconds is asked for over REST, and from CoinGecko if
+  Binance is out of reach. **Chart**: the coin, the day's change and the last 24 hours (hourly,
+  refreshed each hour, its last point the live price), green or red. **Ticker**: the price large,
+  with ▲ or ▼ for the move over the last minute beside the day's change, each coloured by its own
+  direction. Tap checks now. Profiles saved with a currency or interval load with them dropped.
 - **Dice widget:** a die, a coin, yes or no, or a list of up to 8 choices of up to 14 characters
   each. **Dice** (the die): with `dial=1` firmware the deck draws a real 3D cube and throws it. A
   tap sends it tumbling through the air, hopping, bouncing off the key's edges and rolling the way
@@ -174,18 +174,32 @@ to the volume are not echoed back for 400 ms, so a dial being turned never jumps
 
 ```text
 src/
-  shared/                 Configuration, validation, typed IPC contracts, LIVE patch and deck wheel
-                          formats
+  shared/                 Configuration and its validation, typed IPC contracts, LIVE patch and deck
+                          wheel formats
+    widgets.ts            The Widget union, widget state and the time helpers every widget shares
+    widgets/              One kind per widget type - its settings, defaults, validation, when its
+                          picture changes, what a press does - and registry.ts, which names them all
   main/
+    index.ts              Builds the parts below and wires them together
+    app/                  The window, the tray, and quitting
+    deck/                 The session with the deck (finding it, one exchange at a time, the
+                          heartbeat), Wi-Fi setup, and what the deck reports unprompted
+    pages/                What the deck holds, and sending it pages: CACHE, PAGE, ALT, STATE
+    widgets/              Widget state; readings (sound, media, CPU, prices, pings); live pictures
+                          and sliding text; the wheels the deck turns; taps, holds and swipes
+      actions/            What a widget does beyond its own state, one class per type, and a
+                          registry of them
+    profile/              The profile in memory: saving it, opening pages, running keys
+    updates/              New releases, firmware installs, and Decky updating itself
+    ipc/                  Every channel the window calls; only Decky's own window is answered
+    logging/              deck.log
     actions/              Action runner, hotkey helper, toggle state
     config/               Atomic saves, recovery copies, legacy migration
-    device/               Serial and Wi-Fi links, encrypted framing, firmware flashing, LIVE patches
+    device/               Serial and Wi-Fi links, the deck's line format, encrypted framing,
+                          firmware flashing
+    programs/             Installed programs and their icons, for the program picker
     system/               The PowerShell helper that reads and sets Windows' sound and media, and
                           tells of sound changes
-    widget-feeds.ts       Readings for widgets: volume, microphone, media, CPU
-    crypto-feed.ts        Live coin prices, streamed
-    widgets.ts            Widget taps and holds, saved widget state, server checks
-    index.ts              Electron lifecycle and validated IPC orchestration
   preload/                Narrow contextBridge API
   renderer/
     public/models/        Deck CAD model (GLB) shown on the disconnected screen
@@ -193,12 +207,15 @@ src/
       app/                Connection/session state, workspace orchestration and preview adapter
       components/         Shared icons
       features/
-        editor/           Key/action and macro editors, optional starter layout
+        editor/           Key/action and macro editors (actions.ts: every kind of action), optional
+                          starter layout
         artwork/          Import, adjustments, OFF/ON preview, RGB565 rendering
         connection/       Smooth obsidian disconnected screen, actual CAD model and camera transition
         dashboard/        Floating grid, sliding editor slot, pages/settings panels
         firmware/         Install progress, first install on the Disconnected page
-        widgets/          Widget drawing, previews, settings and live updates to the deck
+        widgets/          Widget previews, settings, and live updates to the deck
+          kinds/          One view per widget type - drawing, settings, sample readings, deck look -
+                          and registry.ts, which names them all
       assets/             White SVG logo and generated artwork
       styles/             True-dark theme and responsive layout
 resources/                Application and tray icons
@@ -207,6 +224,13 @@ scripts/                  Bounded UI, visual and hardware checks; package-check.
 tests/                    Configuration, persistence, wire timing, actions, toggles, widgets and
                           their readings, LIVE patches, wheel looks, a simulated deck
 ```
+
+A new widget type needs its kind in `src/shared/widgets/<type>.ts`, its view in
+`src/renderer/src/features/widgets/kinds/<type>/`, an action in `src/main/widgets/actions/` if it
+does something beyond its own state, its type in the `Widget` union, and a line in each registry. A
+type missing from a registry does not compile. Key action kinds work the same way:
+`STEP_CHECKS`/`ACTION_CHECKS` in `src/shared/config.ts`, the runner's `steps` in
+`src/main/actions/runner.ts`, and `ACTION_KINDS` in the editor's `actions.ts`.
 
 The renderer cannot access Node, arbitrary files, raw IPC or arbitrary serial commands. Main
 handlers validate the sender and data. Imported images are bounded raster data URLs, never remote
@@ -245,7 +269,7 @@ never sent. A frame that is altered, injected, replayed or reordered fails authe
 the connection, so nobody on the same network can send commands to the deck or fake key presses to
 the PC. The deck marks its challenge `aesgcm1`; firmware without it (before protocol 7) is not used
 over Wi-Fi. The format is pinned by `tests/secure-channel.test.ts` and implemented in the firmware
-by `src/secure_link.cpp`.
+by `src/security/secure_link.cpp`.
 
 The common command/image protocol runs over either USB or TCP, including preloaded per-key toggles.
 USB uses 128-byte acknowledgement blocks; TCP negotiates 4096-byte blocks in `READY 4096` and reads
@@ -310,9 +334,9 @@ holds. The app remembers the live pictures in each copy the deck holds (page and
   already holds, gets its live picture dropped (`LIVE` with no bytes). Without this, a digital clock
   that moved would leave its last time behind. (Its own picture is only its background, like an
   empty key's.)
-- **The cost:** changing the volume's style on a page of 8 live widgets took 10.4 s when every live
-  widget went again whole; it now takes 0.66 s. One patch of 2.7 KB goes over, and 0.4 s of that is
-  the card saving the page.
+- **The cost:** changing the volume's style on a page of 8 live widgets takes 0.66 s. One patch of
+  2.7 KB goes over, and 0.4 s of that is the card saving the page. Sending every live widget again
+  whole would take 10.4 s.
 - **A page loaded whole** goes as patches over nothing: 22 KB instead of 311 KB for that page.
 - **Out of memory:** when a live picture doesn't fit in memory, the deck refuses the patch
   (`ERR live memory`) rather than draw into the page's own pictures. Live pictures always leave room
@@ -451,11 +475,12 @@ the Updates section, which lists the app and firmware versions and an update but
   be cancelled), checks its SHA-512 against the release's `latest.yml`, and runs it silently; the
   installer closes Decky and opens the new version. Keys, pages and pairing live in `%APPDATA%` and
   are kept. If the update fails, Decky keeps running and the screen offers the installer instead. A
-  development build cannot replace itself and offers the download instead. `src/main/app-update.ts`
-  holds the flow; the release carries `latest.yml` and the installer's `.blockmap` for it. Updates
-  are differential: every installer leaves a copy of itself in `%LOCALAPPDATA%\decky-updater`, and
-  electron-updater fetches only the blocks that differ from it - about 3 MB of the 101 MB installer
-  for an app-only change. When the copy or a blockmap is missing, it downloads the whole installer.
+  development build cannot replace itself and offers the download instead.
+  `src/main/updates/app-update.ts` holds the flow; the release carries `latest.yml` and the
+  installer's `.blockmap` for it. Updates are differential: every installer leaves a copy of itself
+  in `%LOCALAPPDATA%\decky-updater`, and electron-updater fetches only the blocks that differ from
+  it - about 3 MB of the 101 MB installer for an app-only change. When the copy or a blockmap is
+  missing, it downloads the whole installer.
 - **On the deck:** while Decky updates itself the deck shows "Updating Decky" with the download's
   progress, and keeps showing it through the restart, until the new version connects.
 - **Firmware:** covered below; it updates from the same section.
