@@ -126,31 +126,27 @@ export async function renderKey(
     const text = back ? "Back" : (key?.label ?? "");
     const metrics = ctx.measureText(text);
     const gap = ((key?.labelGap ?? 8) * h) / 120;
-    let labelY = h * 0.85;
+    // The label sits at the foot of the key, where it is with an image behind it.
+    const labelY = h * 0.85;
     if (!key?.artwork) {
-        // A third of the key, times the icon size set in Appearance.
-        const size = Math.round((w * 0.3 * (key?.iconSize ?? ICON_SIZES.usual)) / 100);
+        // A third of the key, times the icon size set in Appearance. A label
+        // does not move the icon off the middle: the icon gives way to it,
+        // shrinking only as far as the label and the spacing under it need.
+        const asked = Math.round((w * 0.3 * (key?.iconSize ?? ICON_SIZES.usual)) / 100);
+        const room = (labelY - metrics.actualBoundingBoxAscent - gap - h / 2) * 2;
+        const size = Math.round(hasLabel ? Math.max(w * 0.12, Math.min(asked, room)) : asked);
         const svg = renderToStaticMarkup(
             createElement(KeyIcon, { name: back ? "back" : (key?.icon ?? "plus"), size }),
         ).replaceAll("currentColor", disabled ? GREY : (key?.color ?? "#eeeeee"));
         const icon = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
-        const labelHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-        const iconY = hasLabel ? (h - size - gap - labelHeight) / 2 : (h - size) / 2;
-        labelY = iconY + size + gap + metrics.actualBoundingBoxAscent;
+        const iconY = (h - size) / 2;
         ctx.globalAlpha = disabled ? 0.45 : 1;
         ctx.drawImage(icon, (w - size) / 2, iconY, size, size);
         ctx.globalAlpha = 1;
         if (disabled)
             strike(ctx, w / 2, iconY + size / 2, size * 0.62, Math.max(1.5, size * 0.08), ground);
     } else if (disabled)
-        strike(
-            ctx,
-            w / 2,
-            hasLabel ? h * 0.42 : h / 2,
-            w * 0.2,
-            Math.max(1.5, w * 0.03),
-            "rgba(0, 0, 0, 0.6)",
-        );
+        strike(ctx, w / 2, h / 2, w * 0.2, Math.max(1.5, w * 0.03), "rgba(0, 0, 0, 0.6)");
     ctx.fillStyle = disabled ? fade(GREY, 0.5) : (key?.color ?? "#eeeeee");
     ctx.font = `600 ${Math.round(w * 0.12)}px Segoe UI`;
     if (hasLabel) ctx.fillText(back ? "Back" : (key?.label ?? ""), w / 2, labelY, w * 0.9);

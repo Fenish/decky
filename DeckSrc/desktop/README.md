@@ -580,8 +580,11 @@ icon picker shows a short default set and searches the full library: Lucide's ic
 brands' logos Lucide leaves out (Discord, OBS Studio, Twitch, Spotify, Steam, GitHub and so on;
 `src/renderer/src/components/brand-icons.ts`, from Simple Icons, CC0). A logo is drawn solid in the
 key's colour, a little smaller than an outline icon so it weighs the same. Appearance, editor header
-and selected deck key share the same canvas renderer and update before saving. Icon/text spacing
-moves both as a centered group; labels use the accent color. **Icon size** (40-200%, 100% saved as
+and selected deck key share the same canvas renderer and update before saving. A label never moves
+what the key shows: the label sits at the foot of the key, and the icon stays in the middle,
+shrinking only as far as the label and Icon/text spacing under it need. A widget's caption works the
+same way - it leaves as much room at the foot as it takes at the top, so the widget is a little
+smaller and stays where it was. Labels use the accent color. **Icon size** (40-200%, 100% saved as
 no setting: `iconSize`) scales a key's icon wherever it shows one - on any key without an image, and
 on a widget that draws the key's icon, such as Discord's. Hover over an uploaded image to remove it.
 The dock duplicates the selected key; drag a key onto an empty cell to move it or an occupied cell

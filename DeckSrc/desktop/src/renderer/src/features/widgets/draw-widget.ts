@@ -88,8 +88,12 @@ export function paintKey(
     }
 }
 
-/** Where a widget draws: all of the key, or below its caption. */
+/**
+ * Where a widget draws: all of the key, or clear of its caption - by as much
+ * at the bottom as the caption takes at the top, so a caption makes what the
+ * key shows a little smaller and leaves it where it was, in the middle.
+ */
 export function widgetArea(look: WidgetLook, w: number, h: number): Area {
-    const top = look.label.trim() ? h * 0.2 : 0;
-    return { x: 0, y: top, w, h: h - top };
+    const band = look.label.trim() ? h * 0.18 : 0;
+    return { x: 0, y: band, w, h: h - band * 2 };
 }
