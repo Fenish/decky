@@ -40,7 +40,6 @@ export interface KeyAppearance {
     icon: string;
     color: string;
     background?: string;
-    labelGap?: number;
     /** The icon's size, in % of its usual (a third of the key): 40 to 200. */
     iconSize?: number;
     artwork?: Artwork;
@@ -64,7 +63,6 @@ export function appearanceOf(key: KeyConfig, on = false): KeyAppearance {
         icon: source.icon,
         color: source.color,
         background: source.background,
-        labelGap: source.labelGap,
         iconSize: source.iconSize,
         artwork: source.artwork,
     };
@@ -266,13 +264,6 @@ export function validateConfig(value: unknown): asserts value is DeckConfig {
                         !/^#[0-9a-f]{6}$/i.test(appearance.background))
                 )
                     throw new Error("Invalid key background color.");
-                if (
-                    appearance.labelGap !== undefined &&
-                    (!Number.isInteger(appearance.labelGap) ||
-                        Number(appearance.labelGap) < 0 ||
-                        Number(appearance.labelGap) > 32)
-                )
-                    throw new Error("Invalid icon/text spacing.");
                 if (
                     appearance.iconSize !== undefined &&
                     (!Number.isInteger(appearance.iconSize) ||

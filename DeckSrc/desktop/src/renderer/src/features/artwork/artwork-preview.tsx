@@ -10,11 +10,11 @@ export function ArtworkPreview({
     disabled?: boolean;
 }) {
     const ref = useRef<HTMLCanvasElement>(null);
-    const { label, icon, color, background, labelGap, iconSize, artwork } = value;
+    const { label, icon, color, background, iconSize, artwork } = value;
     useEffect(() => {
         let live = true;
         void renderKey(
-            { label, icon, color, background, labelGap, iconSize, artwork },
+            { label, icon, color, background, iconSize, artwork },
             240,
             240,
             false,
@@ -31,7 +31,7 @@ export function ArtworkPreview({
         return () => {
             live = false;
         };
-    }, [label, icon, color, background, labelGap, iconSize, artwork, disabled]);
+    }, [label, icon, color, background, iconSize, artwork, disabled]);
     return (
         <canvas
             ref={ref}

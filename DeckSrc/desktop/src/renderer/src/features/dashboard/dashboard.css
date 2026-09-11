@@ -163,7 +163,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 15px;
+    gap: 8px;
     overflow: hidden;
     min-width: 0;
     padding: 9px;
@@ -1239,14 +1239,6 @@
 .deck-key .key-label {
     color: var(--key-color, #eee8da);
 }
-.deck-key {
-    gap: var(--key-label-gap, 8px);
-}
-.spacing-field {
-    margin-top: 5px;
-    margin-bottom: 23px;
-}
-
 .remove-artwork {
     pointer-events: none;
 }

@@ -365,7 +365,6 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                                             {
                                                 "--key-color": key?.color ?? "#eee8da",
                                                 "--key-background": key?.background ?? "#000000",
-                                                "--key-label-gap": `${key?.labelGap ?? 8}px`,
                                             } as CSSProperties
                                         }
                                         disabled={!loaded || layoutBusy}

@@ -125,13 +125,14 @@ export async function renderKey(
     ctx.font = `600 ${Math.round(w * 0.12)}px Segoe UI`;
     const text = back ? "Back" : (key?.label ?? "");
     const metrics = ctx.measureText(text);
-    const gap = ((key?.labelGap ?? 8) * h) / 120;
+    // A breath between the icon and the label under it.
+    const gap = h / 15;
     // The label sits at the foot of the key, where it is with an image behind it.
     const labelY = h * 0.85;
     if (!key?.artwork) {
         // A third of the key, times the icon size set in Appearance. A label
         // does not move the icon off the middle: the icon gives way to it,
-        // shrinking only as far as the label and the spacing under it need.
+        // shrinking only as far as the label and the gap under it need.
         const asked = Math.round((w * 0.3 * (key?.iconSize ?? ICON_SIZES.usual)) / 100);
         const room = (labelY - metrics.actualBoundingBoxAscent - gap - h / 2) * 2;
         const size = Math.round(hasLabel ? Math.max(w * 0.12, Math.min(asked, room)) : asked);

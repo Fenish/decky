@@ -162,25 +162,6 @@ export function AppearanceEditor({
                             </div>
                         </div>
                     )}
-                    {value.label.trim() && !value.artwork && (
-                        <label className="slider-field spacing-field">
-                            <span>
-                                Icon/text spacing
-                                <span className="slider-value">{value.labelGap ?? 8} px</span>
-                            </span>
-                            <input
-                                type="range"
-                                aria-label="Icon/text spacing"
-                                min={0}
-                                max={32}
-                                step={1}
-                                value={value.labelGap ?? 8}
-                                onChange={(event) =>
-                                    change({ ...value, labelGap: Number(event.target.value) })
-                                }
-                            />
-                        </label>
-                    )}
                 </>
             )}
             {iconShown && (

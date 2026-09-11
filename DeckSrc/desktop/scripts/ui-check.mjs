@@ -820,18 +820,18 @@ try {
     if (Math.abs(labelled.min - bare.min) > 1 || Math.abs(labelled.max - bare.max) > 1)
         throw new Error("A label moved the icon");
     await page.getByLabel("Key title", { exact: true }).fill("Vent");
-    // A big icon gives way to the label, by as much as Icon/text spacing asks.
+    // A big icon gives way to the label instead of running into it: with the
+    // label there it is drawn smaller, and stays in the middle of the key.
     await page.getByLabel("Icon size", { exact: true }).fill("200");
-    await page.getByRole("slider", { name: "Icon/text spacing", exact: true }).press("Home");
     await matchingPreviews();
-    const tight = await inkBounds(selected, 0.62);
-    await page.getByRole("slider", { name: "Icon/text spacing", exact: true }).press("End");
+    const bigLabelled = await inkBounds(selected, 0.75);
+    await page.getByLabel("Key title", { exact: true }).fill("");
     await matchingPreviews();
-    const spaced = await inkBounds(selected, 0.62);
-    if (spaced.min <= tight.min || spaced.max >= tight.max)
-        throw new Error("Spacing did not make room for the label");
+    const bigBare = await inkBounds(selected, 0.75);
+    if (bigLabelled.min <= bigBare.min || bigLabelled.max >= bigBare.max)
+        throw new Error("A big icon did not give way to the label");
+    await page.getByLabel("Key title", { exact: true }).fill("Vent");
     await page.getByLabel("Icon size", { exact: true }).fill("100");
-    await page.getByRole("slider", { name: "Icon/text spacing", exact: true }).press("Home");
     await matchingPreviews();
     await page.getByRole("button", { name: "Save key", exact: true }).click();
     const accent = await vent.locator("canvas").evaluate((canvas) => {
