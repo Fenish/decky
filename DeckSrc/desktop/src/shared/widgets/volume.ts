@@ -1,18 +1,12 @@
-import type { WidgetKind } from "./widget-kind";
+import { levelKind } from "./level";
+import type { LevelWidget } from "./level";
 
-/** The PC's volume, turned on the deck: an arc or a bar. */
-export type VolumeWidget = {
-    type: "volume";
-    style: "arc" | "bar";
-};
+/** The PC's volume, turned on the deck. */
+export type VolumeWidget = LevelWidget<"volume">;
 
-export const volumeKind: WidgetKind<VolumeWidget> = {
+export const volumeKind = levelKind({
     type: "volume",
     label: "Volume",
     icon: "Volume2",
     words: "sound audio speaker mute",
-    defaults: () => ({ type: "volume", style: "arc" }),
-    valid: (w) => w.style === "arc" || w.style === "bar",
-    deckTurned: () => "dial",
-    fingerTurns: () => true,
-};
+});

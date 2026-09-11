@@ -1,16 +1,29 @@
-import type { VolumeWidget } from "../../../../../../shared/widgets/volume";
+/*---------------------------------------------------------------
+ * A sound level as its key shows it: a 270° arc with its number inside, or
+ * an upright bar with none. Only the icon on it differs from one device to
+ * the next (level-view.ts).
+ *--------------------------------------------------------------*/
+
+import type { WidgetState } from "../../../../../../shared/widgets";
+import type { LevelStyle } from "../../../../../../shared/widgets/level";
 import { DOWN, fade, GREY, icon, write } from "../../canvas-kit";
-import type { Area } from "../../canvas-kit";
+import type { Area, IconName } from "../../canvas-kit";
 import type { WidgetLook, WidgetMoment } from "../../draw-widget";
 
+/** The icon a level shows, and the one it shows while muted. */
+export interface LevelIcons {
+    on: IconName;
+    off: IconName;
+}
+
 /**
- * Where a volume key's shape sits: a 270° arc open at the bottom with its
- * number inside, or an upright bar with none - its fill says it. The deck's
- * dial fills the same shape (volumeFillMap).
+ * Where a level's shape sits: a 270° arc open at the bottom with its number
+ * inside, or an upright bar with none - its fill says it. The deck's dial
+ * fills the same shape (levelFillMap).
  */
-export function volumeGeometry(widget: VolumeWidget, area: Area) {
+export function levelGeometry(style: LevelStyle, area: Area) {
     const cx = area.x + area.w / 2;
-    if (widget.style === "bar") {
+    if (style === "bar") {
         const w = Math.round(area.w * 0.42);
         const h = Math.round(area.h * 0.84);
         const y = Math.round(area.y + area.h * 0.08);
@@ -39,21 +52,23 @@ export function volumeGeometry(widget: VolumeWidget, area: Area) {
 }
 
 /**
- * The volume at `level` (0-100). The deck draws the arc's number itself, so
+ * The level at `level` (0-100). The deck draws the arc's number itself, so
  * the pictures it is sent leave it out (`number` false); the bar has none.
  */
-export function paintVolume(
+export function paintLevel(
     ctx: CanvasRenderingContext2D,
-    widget: VolumeWidget,
+    style: LevelStyle,
+    icons: LevelIcons,
     look: WidgetLook,
     area: Area,
     level: number,
     muted: boolean,
     number: boolean,
 ): void {
-    const shape = volumeGeometry(widget, area);
+    const shape = levelGeometry(style, area);
     const tint = muted ? GREY : look.color;
     const share = Math.max(0, Math.min(1, level / 100));
+    const glyph = muted ? icons.off : icons.on;
     if (shape.kind === "arc") {
         const { cx, cy, r, stroke, start, sweep } = shape;
         ctx.save();
@@ -76,14 +91,7 @@ export function paintVolume(
             ctx.stroke();
         }
         ctx.restore();
-        icon(
-            ctx,
-            muted ? "volumeOff" : "volume",
-            cx,
-            cy + r * 0.52,
-            r * 0.36,
-            muted ? DOWN : fade(tint, 0.65),
-        );
+        icon(ctx, glyph, cx, cy + r * 0.52, r * 0.36, muted ? DOWN : fade(tint, 0.65));
         if (number)
             write(ctx, String(Math.round(level)), cx, shape.textY, shape.textSize, tint, 700);
         return;
@@ -104,12 +112,12 @@ export function paintVolume(
         ctx.fillRect(x, y + h - fill, w, fill);
     }
     ctx.restore();
-    // The speaker sits at the bar's foot: dark on the fill, pale on the track.
+    // The icon sits at the bar's foot: dark on the fill, pale on the track.
     const iconY = y + h - w * 0.42;
     const covered = fill > h - (iconY - y) + w * 0.18;
     icon(
         ctx,
-        muted ? "volumeOff" : "volume",
+        glyph,
         x + w / 2,
         iconY,
         w * 0.44,
@@ -123,13 +131,13 @@ export function paintVolume(
  * arc fills by its angle, the bar from the bottom; the round ends and the
  * glow go with the part of the shape beside them.
  */
-export function volumeFillMap(
-    widget: VolumeWidget,
+export function levelFillMap(
+    style: LevelStyle,
     area: Area,
     width: number,
     height: number,
 ): Uint8Array {
-    const shape = volumeGeometry(widget, area);
+    const shape = levelGeometry(style, area);
     const map = new Uint8Array(width * height).fill(255);
     const share = (t: number): number => 1 + Math.round(Math.max(0, Math.min(1, t)) * 253);
     for (let py = 0; py < height; py++)
@@ -161,21 +169,29 @@ export function volumeFillMap(
     return map;
 }
 
-export function drawVolume(
+/** Whether a level shows greyed: muted, or with no device to show. */
+export function levelMuted(state: WidgetState | undefined): boolean {
+    return state?.muted === true || state?.missing === true;
+}
+
+/** A level on its key: its base picture without `moment`, else as it is now. */
+export function drawLevel(
     ctx: CanvasRenderingContext2D,
-    widget: VolumeWidget,
+    style: LevelStyle,
+    icons: LevelIcons,
     look: WidgetLook,
     area: Area,
     moment?: WidgetMoment,
 ): void {
     const state = moment?.state;
-    paintVolume(
+    paintLevel(
         ctx,
-        widget,
+        style,
+        icons,
         look,
         area,
         moment ? (state?.level ?? 0) : 0,
-        state?.muted === true,
+        levelMuted(state),
         moment !== undefined,
     );
 }

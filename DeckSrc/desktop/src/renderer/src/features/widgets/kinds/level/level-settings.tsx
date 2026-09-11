@@ -1,9 +1,14 @@
 import type { ReactNode } from "react";
-import type { VolumeWidget } from "../../../../../../shared/widgets/volume";
+import type { LevelWidget } from "../../../../../../shared/widgets/level";
 import { StylePicker } from "../../style-picker";
 import type { SettingsProps } from "../widget-view";
 
-export function volumeSettings({ widget, look, onChange }: SettingsProps<VolumeWidget>): ReactNode {
+/** A level's style: the arc or the bar, each drawn as it looks. */
+export function levelSettings<W extends LevelWidget>({
+    widget,
+    look,
+    onChange,
+}: SettingsProps<W>): ReactNode {
     return (
         <StylePicker
             label="Style"
@@ -16,12 +21,5 @@ export function volumeSettings({ widget, look, onChange }: SettingsProps<VolumeW
             ]}
             onChange={onChange}
         />
-    );
-}
-
-export function volumeHint(): string {
-    return (
-        "Swipe up or down on the key to set the PC's volume; it follows your finger. " +
-        "Tap to mute or unmute."
     );
 }

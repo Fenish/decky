@@ -1,11 +1,12 @@
-import type { Reply } from "../../../shared/api";
 import type { CryptoWidget } from "../../../shared/widgets/crypto";
-import type { WidgetAction, WidgetActionContext, WidgetKey } from "./widget-action";
+import type { GestureHandler, WidgetAction } from "./widget-action";
+
+const checkPrice: GestureHandler<CryptoWidget> = (context, _widget, key) => {
+    context.feeds.now(key.address);
+    return { ok: true, message: "Checking the price." };
+};
 
 /** A tap or a hold asks for the price at once. */
 export class PriceAction implements WidgetAction<CryptoWidget> {
-    press(context: WidgetActionContext, _widget: CryptoWidget, key: WidgetKey): Reply {
-        context.feeds.now(key.address);
-        return { ok: true, message: "Checking the price." };
-    }
+    readonly gestures = { tap: checkPrice, hold: checkPrice };
 }

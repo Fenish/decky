@@ -1,8 +1,8 @@
 /*---------------------------------------------------------------
  * Wheels the deck turns by itself: an adjustable countdown's drum, the
- * volume dial, a list's or coin's drum and the die. The app sends a key's
- * look (WHEEL) and hears where it comes to rest (EV ... WHEEL, VALUE); DRAG
- * names the keys a finger turns.
+ * volume and microphone dials, a list's or coin's drum and the die. The app
+ * sends a key's look (WHEEL) and hears where it comes to rest (EV ... WHEEL,
+ * VALUE); DRAG names the keys a finger turns.
  *--------------------------------------------------------------*/
 
 import { crc32 } from "../device/serial";
@@ -18,7 +18,6 @@ import { hasWheel } from "../../shared/widgets/timer";
 import type { DeckSession } from "../deck/session";
 import type { DeckPages } from "../pages/deck-pages";
 import type { Profile } from "../profile/profile";
-import type { WidgetFeeds } from "./feeds";
 import type { WidgetStore } from "./widget-state";
 
 // Keys the deck turns a wheel on, on the page it shows (page id and
@@ -48,7 +47,6 @@ export class DeckWheels {
         private readonly profile: Profile,
         private readonly pages: DeckPages,
         private readonly widgetStore: WidgetStore,
-        private readonly feeds: WidgetFeeds,
     ) {}
 
     private get status(): DeckStatus {
@@ -214,13 +212,15 @@ export class DeckWheels {
         else if (widget?.type === "dice") this.widgetStore.set(address, { value });
     }
 
-    /** A finger turns the volume dial on the deck: Windows follows at once. */
-    dialTurned(cell: number, value: number): void {
+    /**
+     * A finger turns a dial on the deck: it now rests at `value`. False when
+     * no dial of the page shown is there.
+     */
+    dialTurned(cell: number, value: number): boolean {
         const armed = this.wheels.get(cell);
-        if (!armed || armed.pageId !== this.config.activePageId) return;
-        if (this.profile.currentWidget(armed.pageId, cell)?.type !== "volume") return;
+        if (armed?.kind !== "dial" || armed.pageId !== this.config.activePageId) return false;
         armed.index = value;
-        void this.feeds.setVolume(value);
+        return true;
     }
 
     /**
@@ -240,15 +240,12 @@ export class DeckWheels {
             this.pages.deviceReady &&
             pageIndex >= 0
         ) {
-            const { signature } = armed;
-            void this.session
-                .serial(() =>
-                    this.session.link.command(
-                        `WHEELROLL ${pageIndex} ${signature} ${cell} 0`,
-                        2000,
-                    ),
-                )
-                .catch(() => {});
+            this.rollOnDeck(
+                pageId,
+                cell,
+                `WHEELROLL ${pageIndex} ${armed.signature} ${cell} 0`,
+                pick,
+            );
             return "Rolling.";
         }
         if (armed?.pageId === pageId && this.pages.deviceReady && pageIndex >= 0) {
@@ -256,20 +253,30 @@ export class DeckWheels {
             while (target < armed.values.length - 1 && armed.values[target] !== pick) target++;
             if (armed.values[target] === pick) {
                 armed.rolling = target;
-                const { signature } = armed;
-                void this.session
-                    .serial(() =>
-                        this.session.link.command(
-                            `WHEELROLL ${pageIndex} ${signature} ${cell} ${target}`,
-                            2000,
-                        ),
-                    )
-                    .catch(() => {});
+                const command = `WHEELROLL ${pageIndex} ${armed.signature} ${cell} ${target}`;
+                this.rollOnDeck(pageId, cell, command, pick);
                 return `Rolling for ${faces[pick]}.`;
             }
         }
         this.widgetStore.set(keyAddress(pageId, cell), { value: pick });
         return `Rolled ${faces[pick]}.`;
+    }
+
+    /**
+     * Roll a key the deck turns. Should the deck refuse - it no longer has the
+     * key armed (older firmware drops a look for another, and its key with
+     * it) - the app rolls it instead, and forgets the arming so the key's look
+     * goes again with its next picture.
+     */
+    private rollOnDeck(pageId: string, cell: number, command: string, pick: number): void {
+        void this.session
+            .serial(() => this.session.link.command(command, 2000))
+            .then((reply) => {
+                if (reply.ok) return;
+                this.wheels.delete(cell);
+                this.widgetStore.set(keyAddress(pageId, cell), { value: pick });
+            })
+            .catch(() => {});
     }
 
     /** Wheels belong to the page the deck showed them on; another page drops them. */

@@ -1,19 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-    volumeFillMap,
-    volumeGeometry,
-} from "../src/renderer/src/features/widgets/kinds/volume/draw-volume";
+    levelFillMap,
+    levelGeometry,
+} from "../src/renderer/src/features/widgets/kinds/level/draw-level";
 
 const W = 118;
 const H = 123;
 const area = { x: 0, y: 0, w: W, h: H };
 
-describe("the volume arc's fill map", () => {
+describe("a level arc's fill map", () => {
     it("fills each pixel of the arc at the share of the way round it sits", () => {
-        const widget = { type: "volume", style: "arc" } as const;
-        const shape = volumeGeometry(widget, area);
+        const shape = levelGeometry("arc", area);
         if (shape.kind !== "arc") throw new Error("an arc");
-        const map = volumeFillMap(widget, area, W, H);
+        const map = levelFillMap("arc", area, W, H);
         const at = (share: number): number => {
             const angle = shape.start + share * shape.sweep;
             const x = Math.floor(shape.cx + shape.r * Math.cos(angle));

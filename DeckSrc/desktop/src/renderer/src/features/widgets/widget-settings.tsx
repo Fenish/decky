@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { INTEGRATIONS } from "../../../../shared/integrations/registry";
 import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 import type { Widget, WidgetType } from "../../../../shared/widgets";
 import type { WidgetLook } from "./draw-widget";
@@ -27,15 +28,18 @@ export function WidgetSettings({
     onChange: (widget: Widget) => void;
 }) {
     const zones = useMemo(() => timeZones(), []);
+    // An app's widget changes only to another of that app's (OBS: recording,
+    // streaming); any other widget, to any but an app's.
+    const group = WIDGET_CHOICES.find((choice) => choice.type === widget.type)?.group;
     const typeField = (
         <label className="field">
-            Widget
+            {group ? INTEGRATIONS[group].name : "Widget"}
             <select
                 aria-label="Widget type"
                 value={widget.type}
                 onChange={(event) => onChange(defaultWidget(event.target.value as WidgetType))}
             >
-                {WIDGET_CHOICES.map((choice) => (
+                {WIDGET_CHOICES.filter((choice) => choice.group === group).map((choice) => (
                     <option key={choice.type} value={choice.type}>
                         {choice.label}
                     </option>

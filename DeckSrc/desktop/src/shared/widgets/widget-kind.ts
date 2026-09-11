@@ -4,7 +4,8 @@
  * registry.ts names them all.
  *--------------------------------------------------------------*/
 
-import type { Widget, WidgetState } from "../widgets";
+import type { IntegrationId } from "../integrations/integration";
+import type { WidgetState } from "../widgets";
 
 /** What a press does to a widget's state, and what to report. */
 export interface PressResult {
@@ -15,19 +16,22 @@ export interface PressResult {
 /** How the deck turns a widget's key by itself: a drum, a dial, or a die it throws. */
 export type DeckTurn = "drum" | "dial" | "die";
 
-export interface WidgetKind<W extends Widget> {
+export interface WidgetKind<W extends { type: string }> {
     type: W["type"];
     /** How the widget picker shows it, and other words people search for it by. */
     label: string;
     icon: string;
     words: string;
+    /** The app it belongs to, whose page in Apps lists it (shared/integrations); absent for Widgets. */
+    group?: IntegrationId;
     /** Its settings when it is first put on a key. */
     defaults(now: number): W;
     /** Whether saved settings are valid for it; `value` already has its type. */
     valid(value: Record<string, unknown>): boolean;
     /**
-     * Drop settings it no longer has from a saved profile, so the profile
-     * still loads. Changes `value` in place.
+     * Bring settings from a saved profile up to date - drop what it no
+     * longer has, fill in what it gained - so the profile still loads.
+     * Changes `value` in place.
      */
     retire?(value: Record<string, unknown>): void;
     /**

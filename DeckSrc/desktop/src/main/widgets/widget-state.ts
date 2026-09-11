@@ -17,6 +17,8 @@ import type { PressResult } from "../../shared/widgets/widget-kind";
 
 /** A press held this long is a hold: reset, skip, back to the start. */
 export const HOLD_MS = 600;
+/** A tap on a widget that tells taps apart waits this long for the next. */
+export const TAP_GAP_MS = 300;
 /** A finger that moves this far is swiping: no tap when it lifts, no hold. */
 export const SWIPE_PX = 10;
 /** How far a finger moves on a wheel for one step. */

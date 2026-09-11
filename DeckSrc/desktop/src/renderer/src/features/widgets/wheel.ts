@@ -4,6 +4,7 @@ import { toRgb565 } from "../artwork/artwork";
 import { FONT } from "./canvas-kit";
 import type { WidgetLook } from "./draw-widget";
 import { viewOf } from "./kinds/registry";
+import type { DeckLook } from "./kinds/widget-view";
 
 export function rgb565(hex: string): number {
     const n = parseInt(hex.slice(1), 16);
@@ -62,14 +63,38 @@ export function glyphs(
 export const plain = (chars: string[]): { id: string; char: string }[] =>
     chars.map((char) => ({ id: char, char }));
 
+/**
+ * Looks built so far, by what they are built from. Room for every look boot
+ * builds (deckLooks, for every page), so a change of state finds its look
+ * ready rather than drawing it then.
+ */
 const built = new Map<string, Uint8Array>();
+const BUILT_LOOKS = 96;
+
+function builtLook(
+    deck: DeckLook<Widget>,
+    look: WidgetLook,
+    widget: Widget,
+    muted: boolean,
+    width: number,
+    height: number,
+): Uint8Array {
+    const id = JSON.stringify([look, widget, muted, width, height]);
+    let spec = built.get(id);
+    if (!spec) {
+        spec = deck.build({ look, widget, muted, width, height });
+        built.set(id, spec);
+        if (built.size > BUILT_LOOKS) built.delete(built.keys().next().value!);
+    }
+    return spec;
+}
 
 /**
  * For a key the deck turns by itself - an adjustable countdown at rest,
- * dice or a die, the volume - its look (WHEEL), what each label stands for, and where
- * it rests now. The same key gives the same look, which the deck keeps by
- * CRC, so each look travels once. Null for any other key. Each type's look
- * is its view's (kinds/).
+ * dice or a die, the volume and the microphone - its look (WHEEL), what each
+ * label stands for, and where it rests now. The same key gives the same look,
+ * which the deck keeps by CRC, so each look travels once. Null for any other
+ * key. Each type's look is its view's (kinds/).
  */
 export function deckLook(
     look: WidgetLook,
@@ -80,13 +105,23 @@ export function deckLook(
 ): { spec: Uint8Array; values: number[]; index: number } | null {
     const deck = viewOf(widget).deckLook;
     if (!deck) return null;
-    const muted = deck.muted?.(state) ?? false;
-    const id = JSON.stringify([look, widget, muted, width, height]);
-    let spec = built.get(id);
-    if (!spec) {
-        spec = deck.build({ look, widget, muted, width, height });
-        built.set(id, spec);
-        if (built.size > 24) built.delete(built.keys().next().value!);
-    }
+    const spec = builtLook(deck, look, widget, deck.muted?.(state) ?? false, width, height);
     return { spec, ...deck.place(widget, state) };
+}
+
+/**
+ * Every look a key the deck turns can take, whatever its state: both, where
+ * muting greys it (DeckLook.muted). Boot sends them all, so no change of
+ * state waits for a look to be drawn or to travel.
+ */
+export function deckLooks(
+    look: WidgetLook,
+    widget: Widget,
+    width: number,
+    height: number,
+): Uint8Array[] {
+    const deck = viewOf(widget).deckLook;
+    if (!deck) return [];
+    const mutes = deck.muted ? [false, true] : [false];
+    return mutes.map((muted) => builtLook(deck, look, widget, muted, width, height));
 }

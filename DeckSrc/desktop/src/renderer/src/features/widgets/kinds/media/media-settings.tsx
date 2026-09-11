@@ -22,6 +22,7 @@ export function mediaSettings({ widget, look, onChange }: SettingsProps<MediaWid
 export function mediaHint(): string {
     return (
         "What is playing in any app Windows knows of: Spotify, a browser, a game. " +
-        "Tap to play or pause; hold for the next track."
+        "Tap to play or pause, double-tap for the next track, and triple-tap or hold for the " +
+        "previous one."
     );
 }

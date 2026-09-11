@@ -147,7 +147,11 @@ describe("feeds", () => {
         const host = {
             request: vi.fn(async (op: string, fields: Record<string, unknown> = {}) => {
                 asked.push({ op, fields });
-                if (op === "audio") return { level: 40, muted: false, mic: { muted: true } };
+                if (op === "audio")
+                    return {
+                        speaker: { level: 40, muted: false },
+                        microphone: { level: 70, muted: true },
+                    };
                 if (op === "media")
                     return {
                         title: "Song",
@@ -161,6 +165,7 @@ describe("feeds", () => {
             }),
             on: (listener: (event: HostEvent) => void) => (tell = listener),
             run: 1,
+            hold: vi.fn(),
             stop: vi.fn(),
         } as unknown as WindowsHost;
         const fetched: string[] = [];
@@ -179,7 +184,7 @@ describe("feeds", () => {
         feeds.sync(
             configWith({
                 0: { type: "volume", style: "arc" },
-                1: { type: "mic" },
+                1: { type: "mic", style: "bar" },
                 2: { type: "media", style: "cover" },
                 3: { type: "system", show: "both", style: "graph", interval: 1 },
                 5: { type: "crypto", coin: "ethereum", style: "chart" },
@@ -187,7 +192,7 @@ describe("feeds", () => {
         );
         await vi.waitFor(() => {
             expect(store.get("home:0")).toEqual({ level: 40, muted: false });
-            expect(store.get("home:1")).toEqual({ muted: true });
+            expect(store.get("home:1")).toEqual({ level: 70, muted: true });
             expect(store.get("home:2")?.track).toMatchObject({
                 title: "Song",
                 playing: true,
@@ -200,7 +205,7 @@ describe("feeds", () => {
         tell!({ event: "audio", flow: 0, level: 64, muted: false });
         tell!({ event: "audio", flow: 1, level: 50, muted: false });
         expect(store.get("home:0")).toEqual({ level: 64, muted: false });
-        expect(store.get("home:1")).toEqual({ muted: false });
+        expect(store.get("home:1")).toEqual({ level: 50, muted: false });
         // One stream for the coins shown; each price as it comes, on the day drawn.
         expect(socket.opened.map((item) => item.url)).toEqual([
             "wss://data-stream.binance.vision/stream?streams=ethusdt@miniTicker",
@@ -218,10 +223,32 @@ describe("feeds", () => {
         // Volume from a turning dial: values that come while one is set wait,
         // and only the newest goes next - and Windows' echoes of them meanwhile
         // do not pull the dial back.
-        await Promise.all([feeds.setVolume(10), feeds.setVolume(20), feeds.setVolume(30)]);
-        expect(asked.filter((a) => a.op === "volume").map((a) => a.fields.level)).toEqual([10, 30]);
+        await Promise.all([
+            feeds.setLevel("speaker", 10),
+            feeds.setLevel("speaker", 20),
+            feeds.setLevel("speaker", 30),
+        ]);
+        const levels = (flow: number) =>
+            asked
+                .filter((a) => a.op === "level" && a.fields.flow === flow)
+                .map((a) => a.fields.level);
+        expect(levels(0)).toEqual([10, 30]);
         tell!({ event: "audio", flow: 0, level: 20, muted: false });
         expect(store.get("home:0")).toEqual({ level: 30, muted: false });
+        // The microphone's dial sets its own level, and turning it up leaves
+        // it muted: the speaker unmutes as it goes up, the microphone never.
+        store.set("home:1", { level: 50, muted: true }, false);
+        await feeds.setLevel("microphone", 80);
+        expect(levels(1)).toEqual([80]);
+        expect(asked.findLast((a) => a.op === "level")?.fields).toEqual({
+            flow: 1,
+            level: 80,
+            unmute: false,
+        });
+        expect(store.get("home:1")).toEqual({ level: 80, muted: true });
+        tell!({ event: "audio", flow: 1, level: 60, muted: true });
+        expect(store.get("home:1")).toEqual({ level: 80, muted: true });
+        store.set("home:1", { level: 80, muted: false }, false);
         // A tap mutes the mic on the key at once; Windows is asked after.
         let answer: () => void = () => {};
         (host.request as ReturnType<typeof vi.fn>).mockImplementationOnce(
@@ -230,9 +257,9 @@ describe("feeds", () => {
                 return new Promise((resolve) => (answer = () => resolve({})));
             },
         );
-        const muting = feeds.toggleMute("home:1", true);
-        expect(store.get("home:1")).toEqual({ muted: true });
-        expect(asked.at(-1)).toEqual({ op: "micmute", fields: { muted: true } });
+        const muting = feeds.toggleMute("home:1", "microphone");
+        expect(store.get("home:1")).toEqual({ level: 80, muted: true });
+        expect(asked.at(-1)).toEqual({ op: "mute", fields: { flow: 1, muted: true } });
         answer();
         await muting;
         // Play and pause show at once too, the progress held where it is.

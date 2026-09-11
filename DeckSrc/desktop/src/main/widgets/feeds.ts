@@ -14,6 +14,7 @@ import { cpus, freemem, totalmem } from "node:os";
 import { isWidgetKey, keyAddress } from "../../shared/config";
 import type { DeckConfig } from "../../shared/config";
 import type { Track, WidgetState } from "../../shared/widgets";
+import type { SoundDevice } from "../../shared/widgets/level";
 import { trackPosition } from "../../shared/widgets/media";
 import { handleWidget } from "../../shared/widgets/registry";
 import type { WidgetHandlers } from "../../shared/widgets/registry";
@@ -26,16 +27,66 @@ import type { Socket } from "./crypto-feed";
 export const HISTORY = 60;
 /**
  * A full reading of the sound this often besides Windows' word, should one
- * be missed; and how long after the deck sets the volume Windows' echoes of
- * it are let pass, so a dial being turned never jumps back.
+ * be missed; and how long after the deck sets a level Windows' echoes of it
+ * are let pass, so a dial being turned never jumps back.
  */
 const AUDIO_CHECK_S = 15;
-const VOLUME_QUIET_MS = 400;
+const LEVEL_QUIET_MS = 400;
 
-export interface AudioReading {
+/**
+ * Each device as the helper knows it (its flow), and whether turning it up
+ * unmutes it. The speaker does, as Windows' own slider does; a microphone stays
+ * muted, so a stray turn never opens it.
+ */
+const DEVICES: Record<SoundDevice, { flow: number; unmutes: boolean }> = {
+    speaker: { flow: 0, unmutes: true },
+    microphone: { flow: 1, unmutes: false },
+};
+
+/** What the helper can tell whatever is playing to do. */
+export type MediaControl = "media-toggle" | "media-next" | "media-previous";
+
+/** A device's level (0-100) and mute. */
+interface Sound {
     level: number;
     muted: boolean;
-    mic: { muted: boolean } | null;
+}
+/** The helper's reading: no microphone is null. */
+export type AudioReading = Record<SoundDevice, Sound | null>;
+
+/**
+ * A device's level, set as a finger turns its dial. Values that come while
+ * one is being set wait, and only the newest goes next; for a moment after,
+ * Windows' echoes of them are let pass.
+ */
+class LevelSetter {
+    private next: number | null = null;
+    private busy = false;
+    private quietUntil = 0;
+
+    constructor(private readonly apply: (level: number) => Promise<void>) {}
+
+    /** Whether Windows' word on this device is let pass for now. */
+    get quiet(): boolean {
+        return Date.now() < this.quietUntil;
+    }
+
+    async set(level: number): Promise<void> {
+        this.next = Math.max(0, Math.min(100, Math.round(level)));
+        this.quietUntil = Date.now() + LEVEL_QUIET_MS;
+        if (this.busy) return;
+        this.busy = true;
+        try {
+            while (this.next !== null) {
+                const next = this.next;
+                this.next = null;
+                await this.apply(next);
+                this.quietUntil = Date.now() + LEVEL_QUIET_MS;
+            }
+        } finally {
+            this.busy = false;
+        }
+    }
 }
 interface MediaReading {
     none?: boolean;
@@ -78,12 +129,13 @@ export class WidgetFeeds {
     private readonly feeds = new Map<string, Feed>();
     private readonly cpu = new CpuMeter();
     private readonly prices: PriceStream;
-    private audioKeys: { address: string; type: "volume" | "mic" }[] = [];
+    private audioKeys: { address: string; device: SoundDevice }[] = [];
     private mediaKeys: string[] = [];
     private cryptoKeys = new Set<string>();
-    private volumeNext: number | null = null;
-    private volumeBusy = false;
-    private volumeQuietUntil = 0;
+    private readonly levels: Record<SoundDevice, LevelSetter> = {
+        speaker: new LevelSetter((level) => this.applyLevel("speaker", level)),
+        microphone: new LevelSetter((level) => this.applyLevel("microphone", level)),
+    };
     // The helper run Windows was asked to tell of audio changes in.
     private listening = -1;
 
@@ -107,7 +159,7 @@ export class WidgetFeeds {
             string,
             { key: string; seconds: number; run: () => Promise<void> }
         >();
-        const audio: { address: string; type: "volume" | "mic" }[] = [];
+        const audio: { address: string; device: SoundDevice }[] = [];
         const media: string[] = [];
         const coins: { address: string; coin: string }[] = [];
         // What each kind of widget reads; the others read nothing.
@@ -119,8 +171,8 @@ export class WidgetFeeds {
                     run: async () => this.system(address),
                 }),
             crypto: (widget, address) => coins.push({ address, coin: widget.coin }),
-            volume: (_widget, address) => audio.push({ address, type: "volume" }),
-            mic: (_widget, address) => audio.push({ address, type: "mic" }),
+            volume: (_widget, address) => audio.push({ address, device: "speaker" }),
+            mic: (_widget, address) => audio.push({ address, device: "microphone" }),
             media: (_widget, address) => media.push(address),
         };
         for (const page of config.pages)
@@ -171,10 +223,9 @@ export class WidgetFeeds {
             this.feeds.set(id, { key: next.key, timer, run });
             run();
         }
-        if (!audio.length && !media.length) {
-            this.host.stop();
-            this.listening = -1;
-        }
+        const needed = audio.length > 0 || media.length > 0;
+        this.host.hold("feeds", needed);
+        if (!needed) this.listening = -1;
     }
 
     /** Read again now: a tap on a price, or right after a change. */
@@ -211,15 +262,12 @@ export class WidgetFeeds {
 
     private async audio(): Promise<void> {
         const reading = await this.host.request<AudioReading>("audio");
-        for (const { address, type } of this.audioKeys) {
-            if (type === "volume" && Date.now() < this.volumeQuietUntil) continue;
+        for (const { address, device } of this.audioKeys) {
+            if (this.levels[device].quiet) continue;
+            const sound = reading[device];
             this.put(
                 address,
-                type === "volume"
-                    ? { level: reading.level, muted: reading.muted }
-                    : reading.mic
-                      ? { muted: reading.mic.muted }
-                      : { missing: true },
+                sound ? { level: sound.level, muted: sound.muted } : { missing: true },
             );
         }
         // From here Windows tells of every change itself - again after the
@@ -233,14 +281,14 @@ export class WidgetFeeds {
     /** Windows' word that the speaker (flow 0) or microphone (1) changed. */
     private heard(event: HostEvent): void {
         if (event.event !== "audio") return;
-        for (const { address, type } of this.audioKeys) {
-            if (type === "volume" && event.flow === 0 && Date.now() >= this.volumeQuietUntil)
-                this.put(address, { level: Number(event.level), muted: event.muted === true });
-            else if (type === "mic" && event.flow === 1)
-                this.put(
-                    address,
-                    event.missing ? { missing: true } : { muted: event.muted === true },
-                );
+        for (const { address, device } of this.audioKeys) {
+            if (DEVICES[device].flow !== event.flow || this.levels[device].quiet) continue;
+            this.put(
+                address,
+                event.missing
+                    ? { missing: true }
+                    : { level: Number(event.level), muted: event.muted === true },
+            );
         }
     }
 
@@ -263,35 +311,23 @@ export class WidgetFeeds {
                 this.store.set(address, track ? { track } : {}, false);
     }
 
-    /**
-     * Set the volume, as a finger turns the dial. Values that come while one
-     * is being set wait, and only the newest goes next.
-     */
-    async setVolume(level: number): Promise<void> {
-        this.volumeNext = Math.max(0, Math.min(100, Math.round(level)));
-        this.volumeQuietUntil = Date.now() + VOLUME_QUIET_MS;
-        if (this.volumeBusy) return;
-        this.volumeBusy = true;
-        try {
-            while (this.volumeNext !== null) {
-                const next = this.volumeNext;
-                this.volumeNext = null;
-                await this.host.request("volume", { level: next });
-                this.volumeQuietUntil = Date.now() + VOLUME_QUIET_MS;
-                for (const { address, type } of this.audioKeys)
-                    if (type === "volume")
-                        this.store.set(
-                            address,
-                            {
-                                level: next,
-                                muted: next > 0 ? false : this.store.get(address)?.muted,
-                            },
-                            false,
-                        );
+    /** Set a device's level, as a finger turns its dial. */
+    setLevel(device: SoundDevice, level: number): Promise<void> {
+        return this.levels[device].set(level);
+    }
+
+    private async applyLevel(device: SoundDevice, level: number): Promise<void> {
+        const { flow, unmutes } = DEVICES[device];
+        await this.host.request("level", { flow, level, unmute: unmutes });
+        for (const key of this.audioKeys)
+            if (key.device === device) {
+                const muted = this.store.get(key.address)?.muted;
+                this.store.set(
+                    key.address,
+                    { level, muted: unmutes && level > 0 ? false : muted },
+                    false,
+                );
             }
-        } finally {
-            this.volumeBusy = false;
-        }
     }
 
     /**
@@ -299,13 +335,13 @@ export class WidgetFeeds {
      * changes at once; Windows' own word follows, and puts it right if the
      * change did not take.
      */
-    async toggleMute(address: string, microphone: boolean): Promise<void> {
+    async toggleMute(address: string, device: SoundDevice): Promise<void> {
         const muted = !this.store.get(address)?.muted;
         for (const key of this.audioKeys)
-            if ((key.type === "mic") === microphone)
+            if (key.device === device)
                 this.store.set(key.address, { ...this.store.get(key.address), muted }, false);
         try {
-            await this.host.request(microphone ? "micmute" : "mute", { muted });
+            await this.host.request("mute", { flow: DEVICES[device].flow, muted });
         } catch (error) {
             this.now("audio");
             throw error;
@@ -313,11 +349,11 @@ export class WidgetFeeds {
     }
 
     /**
-     * Play or pause, or skip to the next track, in whatever is playing. Play
-     * and pause show at once, the progress stopping or moving on from where
-     * it is; a read soon after confirms it.
+     * Play or pause, or skip to the next or previous track, in whatever is
+     * playing. Play and pause show at once, the progress stopping or moving
+     * on from where it is; a read soon after confirms it.
      */
-    async control(what: "media-toggle" | "media-next"): Promise<void> {
+    async control(what: MediaControl): Promise<void> {
         if (what === "media-toggle") {
             const now = Date.now();
             for (const address of this.mediaKeys) {
