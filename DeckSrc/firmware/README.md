@@ -109,57 +109,112 @@ Otherwise a later restart can be blamed on an old crash.
 
 ## Wi-Fi security
 
-After the challenge-response handshake in `src/wireless.cpp`, every byte in both
-directions goes through `SecureLink` (`src/secure_link.cpp`) as an AES-128-GCM
-frame. Its byte format must match the desktop's
+After the challenge-response handshake in `src/network/wireless.cpp`, every byte
+in both directions goes through `SecureLink` (`src/security/secure_link.cpp`) as
+an AES-128-GCM frame. Its byte format must match the desktop's
 `desktop/src/main/device/secure-channel.ts`; change both together and raise
 `DECKY_PROTOCOL`.
 
-## Source map
+## Layout
 
-- `lib/panel` - RGB bus, timing, backlight, frame buffer, beam timing, GT911.
-  The only code that knows GPIO numbers.
-- `lib/keygrid` - key layout in millimetres, conversion to pixels, touch
-  hit-testing.
-- `src/main.cpp` - the serial protocol, page cache and key drawing. Serial keeps
-  8 KB of what arrives and passes bytes on from the UART once 32 are in (not
-  120): with that, uploads can go in 2 KB blocks, and a 24 KB look takes 0.8 s
-  rather than 1.7 s. A page copy keeps its own pictures exactly as sent, and
-  widget keys' live pictures (`LIVE`) apart from them, so its own pictures
-  always match its signature and the card's copy. A new version of a page
-  carries the live pictures over, and needs only its changed keys, which come as
-  patches (`PATCH`). Live pictures always leave the memory floor and a whole
-  page's worth in one piece free. Without room for one, `LIVE` is refused rather
-  than drawn into the page's own pictures. Slots keep their buffers once they
-  have one, so memory never breaks into pieces too small for a page.
-- `src/wheel.cpp` - picker wheels the deck turns itself: the looks the desktop
-  sends (kept by CRC), the drum they are drawn on, following the finger, the
-  coast after a flick and the spring onto a label, or a roll to a label the
-  desktop picked (a coin, yes or no, a list). Dials too (the volume): each pixel
-  is the key at its lowest or its highest, by a per-pixel map against the value
-  the finger sets, with the number drawn on top. And dice: a cube drawn in 3D (a
-  small rasteriser: each face a parallelogram walked row by row, lit by how it
-  faces the light, rounded and darker at its edges, its pips as small ellipses,
-  a soft shadow under it), thrown by `WHEELROLL` - tumbling through the air,
-  hopping, bouncing off the key's edges, rolling the way it goes, then lying
-  flat where it stops; `EV WHEEL` says how it lies. The throw is fair: where its
-  tumble ends is a random unit quaternion, reached exactly (by time, not
-  integrated), and on the table the spin comes from the roll, so the cube's
-  symmetry keeps every face as likely. Composing a drum's frame takes about 4.3
-  ms and a die's about 5 ms; both run at the panel's refresh (it is about 54
-  Hz), between transfer blocks too. The file is built with `-O2` and fast-math:
-  with the defaults a die's frame took 10-15 ms. Animated keys belong here
-  rather than in the desktop, whose pictures take 20-130 ms each over USB.
-- `src/slide.cpp` - text too long for its key (a song's title), slid along by
-  the deck: up to two lines, each as coverage the desktop drew in its font, laid
-  in one colour over the key's picture inside its window. It rests, slides, and
-  its start comes round after a gap; the edges fade. Only the rows the text
-  covers are written, each time it has moved a pixel, when the beam is clear of
-  them. The text hangs off the page copy it was sent for (`texts` in
-  `CachedPage`) and goes with it, so `LIVE` pictures change under it and a new
-  version of the page starts without it.
-- `src/live_patch.cpp` - decoding `LIVE` patches, for widget pictures and a
-  wheel's backdrop.
-- `src/wireless.cpp`, `src/secure_link.cpp` - Wi-Fi, discovery, pairing,
-  encryption.
-- `src/artwork_store.cpp` - artwork persisted on a microSD card.
+One `Deck` (`src/deck/deck.h`) owns every part; `src/main.cpp` makes it and runs
+it. Each folder is one area, and most areas are a class or two:
+
+```text
+lib/panel/        RGB bus, timing, backlight, framebuffer, beam timing, GT911.
+                  The only code that knows GPIO numbers.
+lib/keygrid/      Key layout in millimetres, conversion to pixels, touch hit-testing.
+include/          decky_version.h: the protocol, and the stamped firmware version.
+src/
+  main.cpp        setup() and loop(): the Deck.
+  deck/           Deck: the main loop, and the parts' owner. Session (what the deck
+                  knows of the desktop), StatusScreen (the logo, loading bar and
+                  "Disconnected"), SessionCommands (ID, HELLO, PING, BLOCK, DRAG...).
+  protocol/       CommandRouter (each line to the CommandSet that knows it),
+                  Transfer (READY and acknowledged blocks), why the deck last started.
+  pages/          Page (a copy of a page), PageCache (the slots, versions and memory
+                  rules), PageCommands (CACHE, PATCH, COMMIT, STATE, LIVE, SLIDE...),
+                  and the LIVE patch format.
+  display/        Screen (writes only where the scanout is not), KeyView (the keys
+                  of the page shown: animation, ON picture, live, own; text, outline).
+  input/          Touch (a finger on a key: press, move, release) and DragReport
+                  (MOVE lines for keys the desktop named).
+  keys/           Keys the deck animates by itself. AnimatedKeys (the 15 keys and
+                  the looks kept by CRC), KeyAnimation (what each kind implements),
+                  Look (what the desktop sends, one subclass a kind), KeyCommands
+                  (WHEEL, WHEELAT, WHEELROLL), glyphs (text drawn from the desktop's
+                  coverage).
+    drum/         Picker wheels: countdowns, lists, the coin.
+    dial/         The volume: arc and bar.
+    die/          The die: its look and physics (die.cpp), drawing (die_render.cpp),
+                  shape and view (die_shape.h), rotations.
+    text/         SlidingText: titles too long for their key.
+  storage/        The SD card cache (artwork_store).
+  network/        Wi-Fi, discovery, pairing, and the command stream over either link.
+  security/       SecureLink: AES-128-GCM frames.
+  common/         KeyImage (a key's picture size), PSRAM helpers, CRC-32, the byte
+                  reader, colour blending.
+```
+
+Choices go through tables, not long `if`/`else` chains:
+
+- **A new command** is a row in its set's table (`{"NAME", &Set::method}`) and a
+  method that parses its line.
+- **A new group of commands** is a `CommandTable` subclass, added to the router
+  in `Deck`'s constructor.
+- **A new kind of animated key** is a folder under `keys/`: a `Look` subclass
+  for what the desktop sends (a row in `Look::parse`'s version table), and a
+  `KeyAnimation` for how it moves and draws.
+- **The Wi-Fi commands** (`network/wireless.cpp`) and the reset reasons
+  (`protocol/identity.cpp`) are tables too.
+
+Notes on what matters in each area:
+
+- **Serial** keeps 8 KB of what arrives and passes bytes on from the UART once
+  32 are in (not 120). With that, uploads can go in 2 KB blocks, and a 24 KB
+  look takes 0.8 s rather than 1.7 s (`Deck::begin`, `Transfer`).
+- **Page copies** keep their own pictures exactly as sent, and widget keys' live
+  pictures (`LIVE`) apart from them, so their own pictures always match their
+  signature and the card's copy.
+  - A new version of a page carries the live pictures over, and needs only its
+    changed keys, which come as patches (`PATCH`).
+  - Live pictures always leave the memory floor and a whole page's worth in one
+    piece free. Without room for one, `LIVE` is refused rather than drawn into
+    the page's own pictures.
+  - Slots keep their buffers once they have one, so memory never breaks into
+    pieces too small for a page (`PageCache`).
+- **Drums** follow the finger, coast after a flick and spring onto a label, or
+  roll to a label the desktop picked (a coin, yes or no, a list).
+- **Dials** take each pixel from the key at its lowest or its highest, by a
+  per-pixel map against the value the finger sets, with the number (the arc's)
+  drawn on top.
+- **The die** is drawn in 3D by a small rasteriser.
+  - Each face is a parallelogram walked row by row, lit by how it faces the
+    light, rounded and darker at its edges, with its pips as small ellipses and
+    a soft shadow under it.
+  - `WHEELROLL` throws it: it tumbles through the air, hops, bounces off the
+    key's edges and rolls the way it goes, then lies flat where it stops.
+    `EV WHEEL` says how it lies.
+  - The throw is fair. Where its tumble ends is a random unit quaternion,
+    reached exactly (by time, not integrated), and on the table the spin comes
+    from the roll, so the cube's symmetry keeps every face as likely.
+- **Speed of animated keys:** a drum's frame takes 3-4 ms and a die's about 5
+  ms. Both run at the panel's refresh (about 54 Hz), between transfer blocks
+  too. `keys/` is built with `-O2` and fast-math (a pragma at the top of each
+  file): with the defaults a die's frame took 10-15 ms. Animated keys belong on
+  the deck rather than in the desktop, whose pictures take 20-130 ms each over
+  USB.
+- **Sliding text** (`keys/text`) has up to two lines, each as coverage the
+  desktop drew in its font, laid in one colour over the key's picture inside its
+  window.
+  - It rests, slides, and its start comes round after a gap; the edges fade.
+  - Only the rows the text covers are written, each time it has moved a pixel,
+    when the beam is clear of them (`KeyView::text_frames`).
+  - It rides on the key's live picture and goes with it.
+- **Checking a change:** the firmware has no unit tests. A change that should
+  not alter behaviour is checked on the deck with `tools/golden_run.py`:
+  - run `record` on the build before the change;
+  - flash the change, then run `check`.
+
+  It drives every command the desktop uses in a fixed order. Then it compares
+  every reply, and two screen captures pixel for pixel.

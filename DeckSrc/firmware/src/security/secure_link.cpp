@@ -1,4 +1,4 @@
-#include "secure_link.h"
+#include "security/secure_link.h"
 
 namespace {
 void nonce(uint8_t iv[12], uint32_t direction, uint64_t counter) {

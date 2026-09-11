@@ -1,8 +1,7 @@
 """Send one command to the deck and print what it says back.
 
     python tools/cmd.py SDINFO
-    python tools/cmd.py SDFORMAT
-    python tools/cmd.py "CLEAR 4"
+    python tools/cmd.py DISPLAY_STATE
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ def main() -> int:
         port.write((command + "\n").encode())
         port.flush()
 
-        # SDFORMAT on a 16 GB card takes well over half a minute.
         deadline = time.time() + 180
         while time.time() < deadline:
             line = port.readline().decode(errors="replace").strip()

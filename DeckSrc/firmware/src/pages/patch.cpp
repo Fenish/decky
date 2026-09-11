@@ -1,4 +1,4 @@
-#include "live_patch.h"
+#include "pages/patch.h"
 
 bool apply_patch(uint16_t *image, int width, int height, const uint8_t *data, size_t length, bool write) {
     size_t at = 0;

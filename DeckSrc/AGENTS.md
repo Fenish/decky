@@ -57,7 +57,7 @@ Fusion before acting on it.
 - **Protocol changes** go in `firmware/include/decky_version.h`, the only copy
   of `DECKY_PROTOCOL`. Raise it whenever the desktop must change with the
   firmware, and teach the desktop's `parseIdentity` the new number.
-- **Wi-Fi framing** exists twice, `firmware/src/secure_link.cpp` and
+- **Wi-Fi framing** exists twice, `firmware/src/security/secure_link.cpp` and
   `desktop/src/main/device/secure-channel.ts`. Change both together; nothing
   after the pairing handshake may travel unencrypted.
 - **Never install `firmware.factory.bin`** on a working deck, and never let a

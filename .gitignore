@@ -19,3 +19,6 @@ DeckSrc/desktop/output/
 factory-backup
 # Firmware images the PlatformIO post-build step copies into the desktop app.
 DeckSrc/desktop/resources/firmware/
+
+# The firmware golden run's own runs (a deck's replies and screen captures).
+DeckSrc/firmware/tools/golden/runs/
