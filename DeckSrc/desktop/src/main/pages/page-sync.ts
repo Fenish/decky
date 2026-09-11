@@ -156,10 +156,13 @@ export class PageSync {
                         : "";
                 const reply = await link.command(`HELLO ${pages.length}${units}`, 2000);
                 if (!reply.ok) return reply;
-                // A new session on the deck: it forgets which keys have wheels,
-                // and every overlay it drew.
+                // A new session on the deck: it drops every live picture it holds
+                // and every overlay it drew, and forgets which keys have wheels.
+                // A load that got no further than this leaves live pictures known
+                // here that are gone there, and a key whose picture has not changed
+                // since would never be sent again.
                 this.wheels.clear();
-                this.live.clearOverlays();
+                this.live.clear();
                 // Uploads over USB in 2 KB blocks where the deck takes them.
                 if ((this.status.identity.block ?? 0) >= 2048) await link.useBlock(2048);
             }

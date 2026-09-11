@@ -330,13 +330,20 @@ export class LiveKeys {
         const next = Buffer.from(frame);
         const base = patches.get(cell) ?? record.frames[cell]!;
         if (base.equals(next)) return { ok: true, message: "Unchanged." };
-        const send = (payload: Uint8Array, baseCrc: number): Promise<Reply> =>
-            this.session.link.push(
-                cell,
-                payload,
-                () => {},
-                `LIVE ${index} ${record.signature} ${cell} ${baseCrc} ${payload.length} ${crc32(payload)}`,
-            );
+        const send = async (payload: Uint8Array, baseCrc: number): Promise<Reply> => {
+            try {
+                return await this.session.link.push(
+                    cell,
+                    payload,
+                    () => {},
+                    `LIVE ${index} ${record.signature} ${cell} ${baseCrc} ${payload.length} ${crc32(payload)}`,
+                );
+            } catch (error) {
+                // The deck went mid-patch (its cable, its Wi-Fi): the window
+                // draws the key again once it is back, and nothing is recorded.
+                return { ok: false, message: String(error) };
+            }
+        };
         let reply = await send(encodeLivePatch(base, next, width, height), crc32(base));
         if (!reply.ok && reply.message.includes("live base"))
             reply = await send(encodeLivePatch(null, next, width, height), 0);

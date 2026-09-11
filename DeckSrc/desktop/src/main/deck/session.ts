@@ -19,6 +19,8 @@ const SILENT_CHECKS = 2;
 const SILENT_RECHECK_MS = 1000;
 // How often the list of USB-serial ports is compared for new arrivals.
 const PORT_WATCH_MS = 1000;
+/** How long the deck may say nothing while something waits on it, before the link counts as gone. */
+const SILENT_MS = 8000;
 // How long a USB port that turned out not to be this deck is left alone.
 const NOT_THIS_DECK_MS = 30_000;
 
@@ -205,8 +207,17 @@ export class DeckSession {
      */
     startHeartbeat(loaded: () => boolean, reset: () => void): void {
         this.heartbeat = setInterval(() => {
+            if (this.lifecycle.quitting) return;
+            // A ping still waiting while the deck has said nothing for a while:
+            // the queue is stuck on a link that is gone - a write to a deck
+            // whose power went waits on TCP's own timeouts, and everything
+            // behind it waits too. Closing the link frees them all.
+            if (this.heartbeatPending && this.link.silentFor > SILENT_MS) {
+                this.heartbeatPending = false;
+                this.linkLost();
+                return;
+            }
             if (
-                this.lifecycle.quitting ||
                 this.heartbeatPending ||
                 !this.status.connected ||
                 this.status.identity.protocol < 3
@@ -233,23 +244,46 @@ export class DeckSession {
         if (this.heartbeat) clearInterval(this.heartbeat);
     }
 
-    // A USB-serial device that was just plugged in is worth a status check at
-    // once rather than at the window's next poll: a deck connects sooner, and
-    // a board without Decky is offered sooner. Listing ports opens none.
+    /**
+     * A USB-serial device plugged in or pulled out is worth a status check at
+     * once rather than at the window's next poll: a deck connects sooner, a
+     * board without Decky is offered sooner, and a deck whose cable went is
+     * known to be gone before anything is sent to it. Listing ports asks
+     * Windows, not the deck, so watching costs the deck nothing.
+     */
     watchPorts(): void {
         let knownPorts: Set<string> | null = null;
         setInterval(() => {
             void DeckLink.listPorts()
                 .then((ports) => {
                     const paths = new Set(ports.map((port) => port.path));
-                    const added =
-                        knownPorts !== null && [...paths].some((p) => !knownPorts!.has(p));
+                    const changed =
+                        knownPorts !== null &&
+                        ([...paths].some((path) => !knownPorts!.has(path)) ||
+                            [...knownPorts].some((path) => !paths.has(path)));
+                    // The cable this link is on: whatever the deck held is gone
+                    // with it, and it may come back having started over.
+                    const open = this.link.openPath;
+                    const lost =
+                        knownPorts !== null &&
+                        open !== null &&
+                        !open.startsWith("tcp://") &&
+                        !paths.has(open);
                     knownPorts = paths;
-                    if (added && !this.lifecycle.quitting)
-                        this.window.sendIfOpen("deck:event", { kind: "ports", at: Date.now() });
+                    if (!changed || this.lifecycle.quitting) return;
+                    if (lost) this.linkLost();
+                    this.window.sendIfOpen("deck:event", { kind: "ports", at: Date.now() });
                 })
                 .catch(() => {});
         }, PORT_WATCH_MS).unref();
+    }
+
+    /** The deck is gone: nothing it held is known any more, and the window hears at once. */
+    private linkLost(): void {
+        this.status = { connected: false };
+        this.onReconnect?.();
+        void this.link.close().catch(() => {});
+        this.window.sendIfOpen("deck:event", { kind: "reset", at: Date.now() });
     }
 
     /** Close the link as Decky quits, with a BYE so the deck shows Disconnected at once. */

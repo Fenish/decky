@@ -14,9 +14,18 @@ the Disconnected page and the Wi-Fi fallback all stop. Measured on the real
 deck: the close event arrived about 1 s after the unplug, and a PING sent after
 it was still waiting 12 s later.
 
+**Wi-Fi has the same trap, worse.** A deck whose power goes never closes its TCP
+connection: a write waits on TCP's own timeouts (minutes), and the whole queue
+waits with it, so Decky goes on looking connected. Since 2026-09-12 the socket
+is dropped when the deck ends it, a write over Wi-Fi gives up after 3 s, and a
+ping still waiting while `DeckLink.silentFor` passes 8 s counts as the link gone
+(`DeckSession.linkLost`, which also frees the queue by closing the link).
+
 **How to apply:** `DeckLink` drops its port on `close` and refuses to write to a
-port that is not open (`src/main/device/serial.ts`). Keep both. Any new code
-that talks to a port must not reuse a port object after `close`.
-`tests/serial.test.ts` pins this with a fake port that behaves like the library.
+port that is not open (`src/main/device/serial.ts`). Keep both, and the Wi-Fi
+guards above. Any new code that talks to a port must not reuse a port object
+after `close`. Watch the host, never the deck: listing ports and reading socket
+state cost the deck nothing, while polling it would. `tests/serial.test.ts` pins
+this with a fake port that behaves like the library.
 
 Related: [[connection-priority]].

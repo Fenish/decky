@@ -24,6 +24,8 @@ export const BAUD = 460800;
  * size makes every block wait out a timeout instead of being acknowledged.
  */
 const BLOCK = 128;
+/** How long a write to the deck over Wi-Fi may take before the link counts as gone. */
+const WRITE_MS = 3000;
 
 /**
  * Lines from the deck that are neither replies nor events: its boot banner,
@@ -96,6 +98,8 @@ export class DeckLink {
     private buffer = "";
     private lines: string[] = [];
     private waiters: ((line: string) => void)[] = [];
+    /** When the deck was last heard from: anything at all, reply or not. */
+    private heardAt = Date.now();
 
     /**
      * Called for every press and page change the deck reports.
@@ -130,6 +134,15 @@ export class DeckLink {
         if (this.socket && !this.socket.destroyed && this.authenticated)
             return `tcp://${this.socketAddress}:47561`;
         return this.port?.isOpen === true ? this.port.path : null;
+    }
+
+    /**
+     * How long the deck has said nothing, in milliseconds. An upload answers
+     * every block, so silence while something is being sent means the link is
+     * gone, however open it still looks.
+     */
+    get silentFor(): number {
+        return Date.now() - this.heardAt;
     }
 
     /** Whether the port this link is using is still attached to the machine. */
@@ -200,6 +213,17 @@ export class DeckLink {
             if (this.socket === socket) this.authenticated = false;
             socket.destroy();
         });
+        // The deck ended it - it restarted, or Wi-Fi went. Kept, it would look
+        // open while every write threw, so it goes the way a pulled cable's
+        // port does and the next check finds the deck again.
+        for (const gone of ["end", "close"] as const)
+            socket.on(gone, () => {
+                if (this.socket !== socket) return;
+                this.socket = null;
+                this.authenticated = false;
+                this.channel = null;
+                this.afterAuth = null;
+            });
         try {
             await new Promise<void>((resolve, reject) => {
                 const timer = setTimeout(() => {
@@ -314,6 +338,7 @@ export class DeckLink {
     }
 
     private consume(chunk: Buffer): void {
+        this.heardAt = Date.now();
         this.buffer += chunk.toString("latin1");
         if (this.buffer.length > 8192) this.buffer = this.buffer.slice(-4096);
 
@@ -396,11 +421,28 @@ export class DeckLink {
     }
 
     private write(bytes: Uint8Array): Promise<void> {
-        if (this.socket) {
+        const socket = this.socket;
+        if (socket) {
+            // Writing to one the deck has ended throws (EPIPE) rather than
+            // answering, so it is refused the way a closed port is.
+            if (socket.destroyed || !socket.writable)
+                return Promise.reject(new Error("Decky is disconnected."));
             const payload = this.channel ? this.channel.seal(bytes) : bytes;
-            return new Promise((resolve, reject) =>
-                this.socket!.write(payload, (error) => (error ? reject(error) : resolve())),
-            );
+            return new Promise((resolve, reject) => {
+                // A deck that went without closing the connection - its power
+                // pulled - leaves a write waiting on TCP's own timeouts, which
+                // are minutes, and every command behind it in the queue with it.
+                const timer = setTimeout(() => {
+                    if (this.socket === socket) this.socket = null;
+                    socket.destroy();
+                    reject(new Error("Decky did not take it."));
+                }, WRITE_MS);
+                socket.write(payload, (error) => {
+                    clearTimeout(timer);
+                    if (error) reject(error);
+                    else resolve();
+                });
+            });
         }
         return new Promise((resolve, reject) => {
             const port = this.port;

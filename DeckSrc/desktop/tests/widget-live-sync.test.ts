@@ -54,6 +54,8 @@ const fixture = vi.hoisted(() => ({
         shown: null as Copy | null,
         commits: [] as { signature: number; keys: Uint8Array[] }[],
         commands: [] as string[],
+        // A command the deck refuses, for a load that fails part way.
+        refuse: null as string | null,
         looks: new Set<number>(),
         // The keys it turns itself: armed by WHEEL or WHEELAT.
         armed: new Set<number>(),
@@ -174,6 +176,8 @@ vi.mock("../src/main/device/serial", async () => {
             close = async () => {};
             command = async (line: string) => {
                 deck.commands.push(line);
+                if (deck.refuse && line.startsWith(deck.refuse))
+                    return { ok: false, message: "ERR refused" };
                 const [name, ...args] = line.split(" ");
                 const [id, signature] = args.map(Number) as [number, number];
                 switch (name) {
@@ -1008,6 +1012,54 @@ describe("pages on the deck", () => {
             ]).catch((error: unknown) => String(error)),
         ).toMatch(/Invalid cached page/);
         expect(await call("pages:cache", pages)).toMatchObject({ ok: false, stale: true });
+        await call("config:save", config);
+    });
+
+    it("sends a widget's picture again when a new session drops what the deck held", async () => {
+        const config = (await call("config:get")) as DeckConfig;
+        const next: DeckConfig = structuredClone(config);
+        next.pages.push({
+            id: "fresh",
+            name: "Fresh",
+            parentId: "home",
+            keys: {
+                3: {
+                    label: "",
+                    icon: "Clock",
+                    color: "#eee8da",
+                    action: { kind: "widget", widget: { type: "counter", start: 0, step: 1 } },
+                },
+            },
+        });
+        next.activePageId = "fresh";
+        await call("config:save", next);
+        const saved = (await call("config:get")) as DeckConfig;
+        const index = saved.pages.findIndex((page) => page.id === "fresh");
+        const pages = saved.pages.map((page) => ({
+            pageId: page.id,
+            frames: black(),
+            toggleFrames: [],
+        }));
+        const picture = new Uint8Array(BYTES).fill(0x5a);
+        const warmup = { widgets: [{ pageId: "fresh", cell: 3, frame: picture }], looks: [] };
+        const copy = () =>
+            fixture.deck.copies.findLast((item) => item.id === index && item.complete)!;
+        // A load that got as far as the widgets and then failed: the deck holds
+        // the picture, and the load is unfinished, so the next one starts a new
+        // session - which drops every live picture the deck holds.
+        fixture.deck.refuse = "STATE";
+        expect(await call("pages:cache", pages, warmup)).toMatchObject({ ok: false });
+        expect(Array.from(copy().live.get(3)!)).toEqual(Array.from(picture));
+        fixture.deck.refuse = null;
+        const mark = fixture.deck.commands.length;
+        expect(await call("pages:cache", pages, warmup)).toMatchObject({ ok: true });
+        console.log(
+            "RUN2",
+            fixture.deck.commands.slice(mark).map((l) => l.split(" ").slice(0, 3).join(" ")),
+        );
+        // The same picture, unchanged since: it has to go again, or the key
+        // would stay blank until whatever it shows changes.
+        expect(Array.from(copy().live.get(3) ?? [])).toEqual(Array.from(picture));
         await call("config:save", config);
     });
 
