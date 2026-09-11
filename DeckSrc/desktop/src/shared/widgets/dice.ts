@@ -50,6 +50,12 @@ export const diceKind: WidgetKind<DiceWidget> = {
         ["die", "coin", "yesno", "list"].includes(String(w.mode)) &&
         text(w.options, 120, true) &&
         (w.mode !== "list" || listOptions(String(w.options)).length >= 2),
+    // What it throws, which a hold on its key flips through; a list only
+    // where there is something to choose from.
+    designs: (w) =>
+        (["die", "coin", "yesno", "list"] as const)
+            .filter((mode) => mode !== "list" || listOptions(w.options).length >= 2)
+            .map((mode) => ({ ...w, mode })),
     // A die the deck throws; a coin, yes or no, or a list spins on a drum.
     deckTurned: (widget) => (widget.mode === "die" ? "die" : "drum"),
     // A die is not turned but thrown, by any touch.

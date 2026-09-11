@@ -6,14 +6,11 @@
  *--------------------------------------------------------------*/
 
 import type { Choice } from "../../../../shared/widgets/choice";
-import { clip, fade, FONT, write } from "./canvas-kit";
+import { clip, dots, fade, FONT, write } from "./canvas-kit";
 import type { Area } from "./canvas-kit";
 import type { WidgetLook, WidgetMoment } from "./draw-widget";
 import { iconSize, keyGlyph, unreachable } from "./key-glyph";
 import { slideLine } from "./slide";
-
-/** Past this many options, no dots: too many to count at a glance. */
-const DOTS_MAX = 8;
 
 /**
  * An option's name as Windows gives a device's, "Microphone (HyperX Cloud II)":
@@ -46,7 +43,6 @@ export function drawChoice(
         keyGlyph(ctx, look, glyph, cx, area.y + area.h / 2, iconSize(look, area));
     else {
         const { which, what } = nameParts(choice.name);
-        const dots = choice.count > 1 && choice.count <= DOTS_MAX;
         keyGlyph(ctx, look, glyph, cx, area.y + area.h * 0.28, iconSize(look, area, 0.3));
         // The name that tells it apart: drawn if it fits, else slid along on the deck.
         const size = Math.round(area.h * 0.125);
@@ -70,17 +66,7 @@ export function drawChoice(
                 600,
             );
         }
-        if (dots) {
-            const r = Math.max(1.5, area.h * 0.02);
-            const gap = r * 3.2;
-            const left = cx - (gap * (choice.count - 1)) / 2;
-            for (let i = 0; i < choice.count; i++) {
-                ctx.fillStyle = i === choice.index ? look.color : fade(look.color, 0.25);
-                ctx.beginPath();
-                ctx.arc(left + i * gap, area.y + area.h * 0.9, r, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
+        dots(ctx, look.color, area, choice.index, choice.count);
     }
     ctx.restore();
 }

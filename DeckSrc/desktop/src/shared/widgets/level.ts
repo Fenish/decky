@@ -34,6 +34,7 @@ export function levelKind<T extends LevelType>({
         words,
         defaults: () => ({ type, style: "arc" }),
         valid: (w) => w.style === "arc" || w.style === "bar",
+        designs: (w) => (["arc", "bar"] as const).map((style) => ({ ...w, style })),
         deckTurned: () => "dial",
         fingerTurns: () => true,
     };

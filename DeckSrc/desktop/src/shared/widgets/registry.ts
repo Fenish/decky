@@ -60,6 +60,28 @@ export function kindOf<W extends Widget>(widget: W): WidgetKind<W> {
     return WIDGET_KINDS[widget.type] as unknown as WidgetKind<W>;
 }
 
+/**
+ * The designs a widget can be shown in, and which of them it is now (-1 when
+ * it is none of them). A hold on its key flips through these, a dot for each;
+ * fewer than two means there is nothing to flip through.
+ */
+export function designsOf<W extends Widget>(widget: W): { list: W[]; index: number } {
+    const list = (kindOf(widget).designs?.(widget) ?? []) as W[];
+    const now = JSON.stringify(widget);
+    return { list, index: list.findIndex((design) => JSON.stringify(design) === now) };
+}
+
+/**
+ * The widget a key shows: the design being picked on it while one is (its
+ * state's `choosing`), else the widget itself. What the key draws and when it
+ * next changes both follow the design under the finger, so the preview runs
+ * as the design would.
+ */
+export function shownWidget<W extends Widget>(w: W, state: WidgetState | undefined): W {
+    const picking = state?.choosing;
+    return picking ? (designsOf(w).list[picking.index] ?? w) : w;
+}
+
 /** Handlers for some widget types, each taking its widget as that type, then `Args`. */
 export type WidgetHandlers<Args extends unknown[], R> = {
     [T in WidgetType]?: (widget: Extract<Widget, { type: T }>, ...args: Args) => R;
@@ -129,7 +151,8 @@ export function nextChange(
     state: WidgetState | undefined,
     now: number,
 ): number | null {
-    return kindOf(widget).nextChange?.(widget, state, now) ?? null;
+    const shown = shownWidget(widget, state);
+    return kindOf(shown).nextChange?.(shown, state, now) ?? null;
 }
 
 /**
@@ -142,6 +165,9 @@ export function deckTurned(
     state: WidgetState | undefined,
     now: number,
 ): DeckTurn | null {
+    // While a design is being picked on the key, the key is a picture: the
+    // design with a dot for each, which a wheel of the deck's own would hide.
+    if (state?.choosing) return null;
     return kindOf(widget).deckTurned?.(widget, state, now) ?? null;
 }
 

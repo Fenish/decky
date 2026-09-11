@@ -85,6 +85,8 @@ export const clockKind: WidgetKind<ClockWidget> = {
         typeof w.timeZone === "string" &&
         w.timeZone.length <= 64 &&
         validTimeZone(w.timeZone),
+    // Its face, which a hold on its key flips through.
+    designs: (w) => (["digital", "analog", "minimal"] as const).map((style) => ({ ...w, style })),
     // Analog hands move every second only when the second hand shows.
     nextChange: (widget, _state, now) =>
         widget.seconds ? 1000 - (now % 1000) : 60_000 - (now % 60_000),

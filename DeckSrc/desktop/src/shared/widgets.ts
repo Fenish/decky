@@ -85,6 +85,12 @@ export interface WidgetState {
     obs?: ObsState;
     /** A touch's countdown: until when (epoch ms), and whether it will start, or stop, what the key shows. */
     arming?: { until: number; start: boolean };
+    /**
+     * A design being picked on the key, held down to start: which of the
+     * widget's designs it shows now, and how many there are (a dot each). It
+     * goes once the design is kept.
+     */
+    choosing?: { index: number; count: number };
     /** What Discord says of the voice channel, or call, a voice key shows (widgets/discord.ts). */
     voice?: VoiceChannel;
     /** The option a key that cycles through options shows (widgets/choice.ts): Discord's microphone. */

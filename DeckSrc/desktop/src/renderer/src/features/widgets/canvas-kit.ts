@@ -89,6 +89,33 @@ export function bigText(
     return size;
 }
 
+/** Past this many, no dots: too many to count at a glance. */
+const DOTS_MAX = 8;
+
+/**
+ * A dot for each of `count` in a row near the foot of `area`, the one at
+ * `index` lit and the rest faint: which of a key's options, or of its designs,
+ * it is showing. Nothing for one alone, or for more than a glance can count.
+ */
+export function dots(
+    ctx: CanvasRenderingContext2D,
+    color: string,
+    area: Area,
+    index: number,
+    count: number,
+): void {
+    if (count < 2 || count > DOTS_MAX) return;
+    const r = Math.max(1.5, area.h * 0.02);
+    const gap = r * 3.2;
+    const left = area.x + area.w / 2 - (gap * (count - 1)) / 2;
+    for (let i = 0; i < count; i++) {
+        ctx.fillStyle = i === index ? color : fade(color, 0.25);
+        ctx.beginPath();
+        ctx.arc(left + i * gap, area.y + area.h * 0.9, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
 // Lucide's 24-unit icons; rects and circles written as paths.
 const ICONS: Record<string, string[]> = {
     volume: [

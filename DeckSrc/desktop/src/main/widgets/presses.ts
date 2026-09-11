@@ -10,6 +10,7 @@ import { keyAddress } from "../../shared/config";
 import type { DeckPage } from "../../shared/config";
 import type { Reply } from "../../shared/api";
 import type { Widget } from "../../shared/widgets";
+import { designsOf } from "../../shared/widgets/registry";
 import type { MainWindow } from "../app/main-window";
 import type { Profile } from "../profile/profile";
 import { actionOf } from "./actions/registry";
@@ -31,10 +32,21 @@ interface WidgetPress {
     swiped: boolean;
 }
 
+/** How long after the last touch a design picked on the key is kept. */
+export const KEEP_MS = 3000;
+
 export class WidgetPresses {
     private readonly widgetPresses = new Map<string, WidgetPress>();
     private readonly taps = new TapRuns();
     private readonly context: WidgetActionContext;
+    /** Keys with a design being picked on them: which one, and when it is kept. */
+    private readonly choosing = new Map<
+        string,
+        { pageId: string; cell: number; index: number; keep: ReturnType<typeof setTimeout> }
+    >();
+    /** A design picked on a key: kept in the profile (set by the app's wiring). */
+    onDesign: ((pageId: string, cell: number, widget: Widget) => void | Promise<void>) | null =
+        null;
 
     constructor(
         private readonly profile: Profile,
@@ -66,6 +78,16 @@ export class WidgetPresses {
     useWidget(pageId: string, cell: number, widget: Widget, gesture: Gesture): Reply {
         const address = keyAddress(pageId, cell);
         const action = actionOf(widget);
+        // Held down, a widget with more than one design offers them on the key,
+        // a dot each, and every tap after that moves to the next. A widget whose
+        // hold already does something keeps it (Now playing goes back a track).
+        if (gesture === "tap" && this.chooseNext(address)) return { ok: true, message: "Design." };
+        if (
+            gesture === "hold" &&
+            !action?.gestures.hold &&
+            this.startChoosing(pageId, cell, widget)
+        )
+            return { ok: true, message: "Pick a design." };
         if (action) {
             const handler = action.gestures[gesture];
             if (!handler) return { ok: true, message: "Nothing happens." };
@@ -76,6 +98,79 @@ export class WidgetPresses {
         if (!result.message) return { ok: true, message: "This widget has nothing to press." };
         this.widgetStore.set(address, result.state);
         return { ok: true, message: result.message };
+    }
+
+    /**
+     * A hold on a widget with designs: the key shows the one it has with a dot
+     * for each, and waits for taps. False for a widget with nothing to pick.
+     */
+    private startChoosing(pageId: string, cell: number, widget: Widget): boolean {
+        const { list, index } = designsOf(widget);
+        if (list.length < 2) return false;
+        this.showChoice(pageId, cell, Math.max(0, index), list.length);
+        return true;
+    }
+
+    /** A tap while a design is being picked: the next one. True when that is what it did. */
+    private chooseNext(address: string): boolean {
+        const picking = this.choosing.get(address);
+        if (!picking) return false;
+        const widget = this.profile.currentWidget(picking.pageId, picking.cell);
+        const count = widget ? designsOf(widget).list.length : 0;
+        if (!widget || count < 2) {
+            this.stopChoosing(address);
+            return false;
+        }
+        this.showChoice(picking.pageId, picking.cell, (picking.index + 1) % count, count);
+        return true;
+    }
+
+    /** The key shows design `index` of `count`, and keeps it once the touches stop. */
+    private showChoice(pageId: string, cell: number, index: number, count: number): void {
+        const address = keyAddress(pageId, cell);
+        const picking = this.choosing.get(address);
+        if (picking) clearTimeout(picking.keep);
+        this.choosing.set(address, {
+            pageId,
+            cell,
+            index,
+            keep: setTimeout(() => this.keepChoice(address), KEEP_MS),
+        });
+        this.widgetStore.set(
+            address,
+            { ...this.widgetStore.get(address), choosing: { index, count } },
+            false,
+        );
+    }
+
+    /**
+     * The design picked goes into the profile, and the key is a key again -
+     * once it is saved, so the key does not flick back to the design it had
+     * for as long as saving takes.
+     */
+    private keepChoice(address: string): void {
+        const picking = this.choosing.get(address);
+        if (!picking) return;
+        const widget = this.profile.currentWidget(picking.pageId, picking.cell);
+        const design = widget ? designsOf(widget).list[picking.index] : undefined;
+        const saved = design && this.onDesign?.(picking.pageId, picking.cell, design);
+        void Promise.resolve(saved).then(
+            () => this.stopChoosing(address, picking),
+            () => this.stopChoosing(address, picking),
+        );
+    }
+
+    /**
+     * No design is being picked on this key any more. `only` stops just that
+     * one: a hold that began while the last was being saved stands.
+     */
+    private stopChoosing(address: string, only?: object): void {
+        const picking = this.choosing.get(address);
+        if (!picking || (only && picking !== only)) return;
+        clearTimeout(picking.keep);
+        this.choosing.delete(address);
+        const { choosing: _picked, ...rest } = this.widgetStore.get(address) ?? {};
+        this.widgetStore.set(address, rest, false);
     }
 
     /** A finger turned a widget's dial on the deck to `value`: its action follows. */

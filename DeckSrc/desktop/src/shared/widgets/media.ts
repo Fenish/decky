@@ -21,6 +21,7 @@ export const mediaKind: WidgetKind<MediaWidget> = {
     words: "music song spotify track player media currently playing pause",
     defaults: () => ({ type: "media", style: "cover" }),
     valid: (w) => w.style === "cover" || w.style === "card",
+    designs: (w) => (["cover", "card"] as const).map((style) => ({ ...w, style })),
     nextChange: (_widget, state, now) => {
         // The progress bar moves every second while the track plays.
         const track = state?.track;

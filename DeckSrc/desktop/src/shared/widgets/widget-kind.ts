@@ -46,6 +46,13 @@ export interface WidgetKind<W extends { type: string }> {
      * swipe changes; null when this one does not.
      */
     swipe?(widget: W, state: WidgetState | undefined, steps: number): WidgetState | null;
+    /**
+     * The designs it can be shown in - a clock's face, a die or a list - as
+     * whole widgets, the one it is now among them, in the order a hold on its
+     * key flips through them. Only designs it could take as it stands: a list
+     * of choices with nothing to choose from is not one.
+     */
+    designs?(widget: W): W[];
     /** How the deck turns its key by itself, if it does. */
     deckTurned?(widget: W, state: WidgetState | undefined, now: number): DeckTurn | null;
     /** Whether a finger turns its key: a swipe on it is then neither a tap nor a hold. */

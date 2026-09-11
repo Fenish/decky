@@ -10,6 +10,7 @@ import { duplicateKey, moveKey } from "../../shared/key-layout";
 import type { KeyLocation } from "../../shared/key-layout";
 import { BACK_CELL, retireWidgets, validateConfig } from "../../shared/config";
 import type { DeckConfig, KeyStates } from "../../shared/config";
+import type { Widget } from "../../shared/widgets";
 import type { Reply } from "../../shared/api";
 import type { IntegrationId } from "../../shared/integrations/integration";
 import { toSendKeys } from "../actions/hotkeys";
@@ -167,6 +168,29 @@ export class Workspace {
         return (
             (await service.press?.(control)) ?? { ok: false, message: "That app has no controls." }
         );
+    }
+
+    /** A widget's own settings from the deck - a design picked on its key - saved. */
+    async setWidget(pageId: string, cell: number, widget: Widget): Promise<void> {
+        const { config } = this.profile;
+        const page = config.pages.find((item) => item.id === pageId);
+        const key = page?.keys[String(cell)];
+        if (!page || !key || key.action.kind !== "widget" || key.action.widget.type !== widget.type)
+            return;
+        await this.persist({
+            ...config,
+            pages: config.pages.map((item) =>
+                item.id === pageId
+                    ? {
+                          ...item,
+                          keys: {
+                              ...item.keys,
+                              [cell]: { ...key, action: { kind: "widget", widget } },
+                          },
+                      }
+                    : item,
+            ),
+        });
     }
 
     /** Move a key onto another cell, or swap it with the key there (keys:move). */

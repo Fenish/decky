@@ -85,17 +85,29 @@ the tray menu.
   single tap on it acts 300 ms after the finger lifts; other keys never wait. A hold or a swipe
   drops the taps just before it. Widgets are always Normal buttons, and only their background and
   accent colors are set in Appearance. Where a widget has styles, each is drawn live in the editor
-  with made-up readings, to be picked by eye. What a person did (timer, pomodoro, counter, a
-  countdown's picked time, the last dice roll and where the die lay) is saved in
-  `%APPDATA%/Decky/widgets.json` and moves with its key, so a running timer keeps counting while
-  Decky is closed. Readings (ping, volume, what is playing, CPU, prices) are read again and never
-  saved. Widgets on every page are kept current, not only on the page shown: while the deck loads,
-  each gets its picture as it is now, and the keys it turns get every look they can take - a dial's
-  muted look too, a countdown's drum while it runs - counted in its progress bar. So no page opens
-  on placeholders, and no press afterwards waits for a look: switching to a look the deck keeps
-  takes 20 ms, where sending a volume's arc takes 0.9 s. The page shown sends its looks last, so
-  they are the newest the deck keeps. After that a page not shown gets a widget's new picture when
-  its state changes, at most every 5 seconds, and a clock's every 30 seconds.
+  with made-up readings, to be picked by eye, and picked on the deck as well - see **Designs on the
+  key** below. What a person did (timer, pomodoro, counter, a countdown's picked time, the last dice
+  roll and where the die lay) is saved in `%APPDATA%/Decky/widgets.json` and moves with its key, so
+  a running timer keeps counting while Decky is closed. Readings (ping, volume, what is playing,
+  CPU, prices) are read again and never saved. Widgets on every page are kept current, not only on
+  the page shown: while the deck loads, each gets its picture as it is now, and the keys it turns
+  get every look they can take - a dial's muted look too, a countdown's drum while it runs - counted
+  in its progress bar. So no page opens on placeholders, and no press afterwards waits for a look:
+  switching to a look the deck keeps takes 20 ms, where sending a volume's arc takes 0.9 s. The page
+  shown sends its looks last, so they are the newest the deck keeps. After that a page not shown
+  gets a widget's new picture when its state changes, at most every 5 seconds, and a clock's every
+  30 seconds.
+- **Designs on the key:** a hold on a widget whose look can change offers its designs there and
+  then, the way Discord's microphone offers its devices: the key draws the design itself, a little
+  smaller, over a dot for each there is, and every tap moves to the next and round again. Three
+  seconds after the last touch the design showing is saved to the key, and it is a key again. So a
+  clock goes from digital to analog, a die becomes a coin, yes-or-no or a list (a list only where
+  there is something to choose from), and a volume or microphone goes from arc to bar, all without
+  the app. A widget whose hold already does something keeps it - Now playing goes back a track, a
+  timer resets, a pomodoro skips - and its styles are picked in the editor as before. While a design
+  is being picked, the deck stops turning that key itself, so the picture with the dots shows; the
+  key goes back to its wheel or its die once the design is kept. Each kind names its own designs
+  (`designs` in `src/shared/widgets/`), so a new one needs nothing here.
 - **Clock widget:** digital, analog or minimal; 24- or 12-hour, with two-digit hours in both;
   seconds; the date on the digital face; any time zone, so a second clock makes a world clock.
 - **Timer widget:** a stopwatch, or a countdown of up to 23:59:59. Tap starts or pauses; hold

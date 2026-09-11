@@ -2,7 +2,8 @@ import type { SlideLine } from "../../../../shared/slide-spec";
 import type { SweepArc } from "../../../../shared/sweep-spec";
 import type { KeyAppearance } from "../../../../shared/config";
 import type { Widget, WidgetState } from "../../../../shared/widgets";
-import { fade, FONT } from "./canvas-kit";
+import { shownWidget } from "../../../../shared/widgets/registry";
+import { dots, fade, FONT } from "./canvas-kit";
 import type { Area } from "./canvas-kit";
 import { viewOf } from "./kinds/registry";
 
@@ -65,7 +66,13 @@ export function drawWidget(
     ctx.save();
     paintKey(ctx, look, w, h);
     const area = widgetArea(look, w, h);
-    viewOf(widget).draw(ctx, widget, look, area, moment);
+    // A design being picked on the key (held down): the key shows that design,
+    // over a dot for each there is, until it is kept.
+    const picking = moment?.state?.choosing;
+    const shown = shownWidget(widget, moment?.state);
+    const room = picking ? { ...area, h: area.h * 0.86 } : area;
+    viewOf(shown).draw(ctx, shown, look, room, moment);
+    if (picking) dots(ctx, look.color, area, picking.index, picking.count);
     ctx.restore();
 }
 

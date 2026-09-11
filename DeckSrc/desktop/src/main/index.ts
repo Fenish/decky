@@ -148,6 +148,9 @@ async function start(): Promise<void> {
         window,
     );
     const updates = new Updates(session, pageSync, window, lifecycle);
+    // A design picked on a key, once the touches stop: kept in the profile.
+    presses.onDesign = (pageId, cell, widget) =>
+        workspace.setWidget(pageId, cell, widget).catch(() => {});
     session.onReconnect = () => pageSync.forget();
     // Decky on Discord, when Settings turns it on: what is going on, from the parts that know.
     const richPresence = new RichPresence(
