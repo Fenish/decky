@@ -1,4 +1,4 @@
-import { BACK_CELL, CELL_COUNT } from "./config";
+import { BACK_CELL, CELL_COUNT, isStep } from "./config";
 import type { Action, DeckConfig, KeyConfig, Step } from "./config";
 import { hotkeysInUse, nextFreeHotkey } from "./hotkey-pool";
 export interface KeyLocation {
@@ -62,7 +62,7 @@ function reassignAuto(action: Action, taken: string[]): Action {
         return { ...step, keys };
     };
     if (action.kind === "macro") return { ...action, steps: action.steps.map(fresh) };
-    return action.kind === "page" || action.kind === "widget" ? action : fresh(action);
+    return isStep(action) ? fresh(action) : action;
 }
 export function duplicateKey(
     config: DeckConfig,

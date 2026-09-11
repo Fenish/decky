@@ -11,6 +11,8 @@ import { WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 import type { WidgetStates } from "../../../../shared/widgets";
 import { KeyEditor } from "../editor/key-editor";
 import type { EditorTab } from "../editor/key-editor";
+import type { IntegrationId } from "../../../../shared/integrations/integration";
+import { keyDisabled } from "../artwork/artwork";
 import { KeyFace } from "./key-face";
 import { ManagePageDialog, withoutPage } from "./page-dialog";
 import type { PageDialog } from "./page-dialog";
@@ -39,8 +41,12 @@ interface DashboardProps {
     pressedCell: number | null;
     keyStates: KeyStates;
     widgetStates: WidgetStates;
+    /** Apps out of reach: the keys that control them look disabled. */
+    appsDown: readonly IntegrationId[];
     save: (config: DeckConfig) => Promise<void>;
     navigate: (id: string) => Promise<void>;
+    /** A page's Back: the page it was opened from, else its parent. */
+    goBack: (pageId: string) => Promise<void>;
     sync: () => Promise<void>;
     notify: (message: string) => void;
     message: string;
@@ -63,8 +69,10 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
         pressedCell,
         keyStates,
         widgetStates,
+        appsDown,
         save,
         navigate,
+        goBack,
         sync,
         notify,
         message,
@@ -119,9 +127,10 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                 setRevealUpdates((count) => count + 1);
             }),
     }));
-    const openPage = (id: string): void =>
+    /** Leave the page shown: for another (`to`), or back. */
+    const leavePage = (to: () => Promise<void>): void =>
         guard(() => {
-            void navigate(id)
+            void to()
                 .then(() => {
                     // The key editor belongs to the page being left; Pages and Settings stay open.
                     if (panel === "key") setPanelOpen(false);
@@ -129,9 +138,10 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                 })
                 .catch((e) => notify(String(e)));
         });
+    const openPage = (id: string): void => leavePage(() => navigate(id));
     const select = (cell: number): void => {
         if (cell === BACK_CELL && page.parentId) {
-            openPage(page.parentId);
+            leavePage(() => goBack(page.id));
             return;
         }
         if (
@@ -442,6 +452,7 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                                             back={back}
                                             toggled={toggled}
                                             widgetState={widgetStates[keyAddress(page.id, cell)]}
+                                            disabled={!back && keyDisabled(key, appsDown)}
                                         />
                                     </button>
                                 );

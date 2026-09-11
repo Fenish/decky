@@ -11,7 +11,7 @@ import { fellBackToWifi, transportOf } from "../../shared/transport";
 import type { Transport } from "../../shared/transport";
 import type { Lifecycle } from "../app/lifecycle";
 import type { MainWindow } from "../app/main-window";
-import type { DeckLog } from "../logging/deck-log";
+import type { LogFile } from "../logging/log-file";
 
 // Two silent asks a moment apart - a deck plugged in just now may still be
 // starting up - and the Disconnected page offers to set the device up.
@@ -49,7 +49,7 @@ export class DeckSession {
     constructor(
         private readonly window: MainWindow,
         private readonly lifecycle: Lifecycle,
-        private readonly log: DeckLog,
+        private readonly log: LogFile,
     ) {}
 
     /** Run `job` once the jobs before it are done: one exchange with the deck at a time. */

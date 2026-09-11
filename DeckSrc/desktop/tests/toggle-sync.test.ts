@@ -1,6 +1,10 @@
+import { rm } from "node:fs/promises";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({
+    // Decky's own folder (app.getPath), fresh each run: what one run saves -
+    // widget state, a running countdown - must not be there for the next.
+    folder: `${process.env.TEMP ?? process.env.TMPDIR ?? "/tmp"}/decky-fixture-${process.pid}-${Date.now()}`,
     handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
     events: new Map<string, (event: { preventDefault: () => void }) => void>(),
     commands: [] as string[],
@@ -49,7 +53,7 @@ vi.mock("electron", () => ({
         on: (name: string, fn: (event: { preventDefault: () => void }) => void) =>
             fixture.events.set(name, fn),
         whenReady: async () => {},
-        getPath: () => "/fixture",
+        getPath: () => fixture.folder,
         quit: vi.fn(),
     },
     BrowserWindow: class {
@@ -83,6 +87,8 @@ vi.mock("../src/main/actions/runner", () => ({
     ActionRunner: class {
         run = async () => ({ ok: true, message: "Done" });
         cancel = vi.fn();
+        prepare = () => {};
+        stop = () => {};
     },
 }));
 vi.mock("../src/main/device/serial", async () => {
@@ -127,7 +133,10 @@ async function call(channel: string, ...args: unknown[]): Promise<unknown> {
         ...args,
     );
 }
-afterAll(() => fixture.events.get("before-quit")?.({ preventDefault: () => {} }));
+afterAll(async () => {
+    fixture.events.get("before-quit")?.({ preventDefault: () => {} });
+    await rm(fixture.folder, { recursive: true, force: true });
+});
 describe("independent toggle synchronization", () => {
     it("preloads both toggles once, then alternates every state with commands only", async () => {
         await import("../src/main/index");

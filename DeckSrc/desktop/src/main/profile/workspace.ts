@@ -11,6 +11,7 @@ import type { KeyLocation } from "../../shared/key-layout";
 import { BACK_CELL, retireWidgets, validateConfig } from "../../shared/config";
 import type { DeckConfig, KeyStates } from "../../shared/config";
 import type { Reply } from "../../shared/api";
+import type { IntegrationId } from "../../shared/integrations/integration";
 import { toSendKeys } from "../actions/hotkeys";
 import type { KeyStateStore } from "../actions/key-state";
 import type { ActionRunner } from "../actions/runner";
@@ -18,8 +19,8 @@ import type { MainWindow } from "../app/main-window";
 import { saveConfig } from "../config/store";
 import type { DeckPages } from "../pages/deck-pages";
 import type { PageSync } from "../pages/page-sync";
-import type { WidgetFeeds } from "../widgets/feeds";
-import type { PingWatcher } from "../widgets/ping";
+import type { IntegrationService } from "../integrations/integration";
+import type { WidgetReadings } from "../widgets/readings";
 import type { WidgetPresses } from "../widgets/presses";
 import type { WidgetStore } from "../widgets/widget-state";
 import type { Profile } from "./profile";
@@ -37,6 +38,8 @@ const location = (value: unknown): KeyLocation => {
 
 export class Workspace {
     private saveQueue: Promise<unknown> = Promise.resolve();
+    /** Each page opened, and the page it was opened from, for its Back; gone when Decky quits. */
+    private readonly cameFrom = new Map<string, string>();
 
     constructor(
         private readonly profile: Profile,
@@ -44,8 +47,7 @@ export class Workspace {
         private readonly pageSync: PageSync,
         private readonly presses: WidgetPresses,
         private readonly widgetStore: WidgetStore,
-        private readonly pings: PingWatcher,
-        private readonly feeds: WidgetFeeds,
+        private readonly readings: WidgetReadings,
         private readonly keyStates: KeyStateStore,
         private readonly runner: ActionRunner,
         private readonly window: MainWindow,
@@ -79,8 +81,8 @@ export class Workspace {
             afterReconcile?.(previousStates);
             this.widgetStore.reconcile(next);
             profile.config = next;
-            this.pings.sync(next);
-            this.feeds.sync(next);
+            this.readings.sync(next);
+            this.runner.prepare(next);
             this.pageSync.prune(next);
             this.window.send("keys:states", this.keyStates.snapshot());
         });
@@ -90,7 +92,28 @@ export class Workspace {
         return profile.config;
     }
 
+    /** Open a page - from a page key, or the window - remembering the one it was opened from. */
     async navigate(pageId: unknown): Promise<DeckConfig> {
+        const from = this.profile.config.activePageId;
+        const config = await this.show(pageId);
+        if (pageId !== from) this.cameFrom.set(pageId as string, from);
+        return config;
+    }
+
+    /**
+     * A page's Back: the page it was opened from, as a person would expect
+     * with a page reached from several; its parent when that is not known
+     * (since Decky started) or is gone.
+     */
+    async back(pageId: unknown): Promise<DeckConfig> {
+        const { pages } = this.profile.config;
+        const page = pages.find((p) => p.id === pageId);
+        if (!page?.parentId) throw new Error("Page not found.");
+        const from = this.cameFrom.get(page.id);
+        return this.show(from && pages.some((p) => p.id === from) ? from : page.parentId);
+    }
+
+    private async show(pageId: unknown): Promise<DeckConfig> {
         const { profile } = this;
         if (typeof pageId !== "string" || !profile.config.pages.some((p) => p.id === pageId))
             throw new Error("Page not found.");
@@ -110,17 +133,19 @@ export class Workspace {
         const page = this.profile.config.pages.find((p) => p.id === pageId);
         if (!page) throw new Error("Page not found.");
         if (Number(cell) === BACK_CELL && page.parentId) {
-            await this.navigate(page.parentId);
+            await this.back(page.id);
             return { ok: true, message: "Back" };
         }
         const key = page.keys[String(cell)];
         if (!key) return { ok: false, message: "Assign an action to this key first." };
         if (key.action.kind === "widget")
-            return this.presses.useWidget(page.id, Number(cell), key.action.widget, false);
+            return this.presses.useWidget(page.id, Number(cell), key.action.widget, "tap");
         const reply =
             key.action.kind === "page"
                 ? (await this.navigate(key.action.pageId), { ok: true, message: "Page opened." })
-                : await this.runner.run(key.action);
+                : key.action.kind === "app"
+                  ? await this.pressControl(key.action.app, key.action.control)
+                  : await this.runner.run(key.action);
         if (this.keyStates.complete(page.id, Number(cell), key, reply.ok)) {
             const display = this.pageSync.showToggles(page.id);
             const displayReply = display && (await display);
@@ -134,6 +159,14 @@ export class Workspace {
         }
         this.window.send("action:activity", { at: Date.now(), label: key.label, ...reply });
         return reply;
+    }
+
+    /** A key with an app's control: the app switches it, and its toggle follows (AppControls). */
+    private async pressControl(app: IntegrationId, control: string): Promise<Reply> {
+        const service: IntegrationService = this.readings.integrations[app];
+        return (
+            (await service.press?.(control)) ?? { ok: false, message: "That app has no controls." }
+        );
     }
 
     /** Move a key onto another cell, or swap it with the key there (keys:move). */

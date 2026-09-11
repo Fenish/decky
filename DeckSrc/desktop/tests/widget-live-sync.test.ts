@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { createConfig } from "../src/shared/config";
 import type { DeckConfig } from "../src/shared/config";
@@ -9,6 +10,8 @@ import { encodeLivePatch } from "../src/shared/live-patch";
 import { DICE_FEEL, DIE_FEEL, encodeWheelSpec, WHEEL_FEEL } from "../src/shared/wheel-spec";
 import { packPose } from "../src/shared/die";
 import { encodeSlide, SLIDE_FEEL } from "../src/shared/slide-spec";
+import { encodeSweep } from "../src/shared/sweep-spec";
+import type { SweepMotion } from "../src/shared/sweep-spec";
 
 // A 32 × 32 key: RGB565, 2 bytes a pixel - room for a wheel's rows and a die.
 const KEY = 32;
@@ -24,9 +27,14 @@ interface Copy {
     complete: boolean;
     /** Keys sliding text along, and the CRC of the text. */
     slides: Map<number, number>;
+    /** Keys with a ring's arc moving, and the CRC of the arc. */
+    sweeps: Map<number, number>;
 }
 
 const fixture = vi.hoisted(() => ({
+    // Decky's own folder (app.getPath), fresh each run: what one run saves -
+    // widget state, a running countdown - must not be there for the next.
+    folder: `${process.env.TEMP ?? process.env.TMPDIR ?? "/tmp"}/decky-fixture-${process.pid}-${Date.now()}`,
     handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
     events: new Map<string, (event: { preventDefault: () => void }) => void>(),
     contents: {
@@ -47,6 +55,8 @@ const fixture = vi.hoisted(() => ({
         commits: [] as { signature: number; keys: Uint8Array[] }[],
         commands: [] as string[],
         looks: new Set<number>(),
+        // The keys it turns itself: armed by WHEEL or WHEELAT.
+        armed: new Set<number>(),
     },
     // What was asked of Windows: the volume, the microphone.
     host: [] as { op: string; fields: Record<string, unknown> }[],
@@ -56,8 +66,11 @@ vi.mock("../src/main/system/windows-host", () => ({
     WindowsHost: class {
         request = async (op: string, fields: Record<string, unknown> = {}) => {
             fixture.host.push({ op, fields });
-            return op === "audio" ? { level: 40, muted: false, mic: { muted: false } } : {};
+            return op === "audio"
+                ? { speaker: { level: 40, muted: false }, microphone: { level: 70, muted: false } }
+                : {};
         };
+        hold = () => {};
         stop = () => {};
     },
 }));
@@ -70,7 +83,7 @@ vi.mock("electron", () => ({
         on: (name: string, fn: (event: { preventDefault: () => void }) => void) =>
             fixture.events.set(name, fn),
         whenReady: async () => {},
-        getPath: () => "/fixture",
+        getPath: () => fixture.folder,
         quit: () => {},
     },
     BrowserWindow: class {
@@ -108,6 +121,8 @@ vi.mock("../src/main/actions/runner", () => ({
     ActionRunner: class {
         run = async () => ({ ok: true, message: "Done" });
         cancel = () => {};
+        prepare = () => {};
+        stop = () => {};
     },
 }));
 vi.mock("../src/main/device/serial", async () => {
@@ -149,6 +164,7 @@ vi.mock("../src/main/device/serial", async () => {
                 warm: true,
                 block: 4096,
                 slide: true,
+                sweep: true,
             });
             stillAttached = async () => true;
             useBlock = async (bytes: number) => {
@@ -184,6 +200,9 @@ vi.mock("../src/main/device/serial", async () => {
                             slides: new Map(
                                 [...(base?.slides ?? [])].filter(([cell]) => live.has(cell)),
                             ),
+                            sweeps: new Map(
+                                [...(base?.sweeps ?? [])].filter(([cell]) => live.has(cell)),
+                            ),
                             live,
                             keys: base
                                 ? base.keys.map((key) => key.slice())
@@ -198,6 +217,7 @@ vi.mock("../src/main/device/serial", async () => {
                         deck.pending!.keys[id] = new Uint8Array(BYTES);
                         deck.pending!.live.delete(id);
                         deck.pending!.slides.delete(id);
+                        deck.pending!.sweeps.delete(id);
                         return ok("OK blank");
                     case "COMMIT": {
                         const copy = deck.pending!;
@@ -222,13 +242,20 @@ vi.mock("../src/main/device/serial", async () => {
                     }
                     // Arming with a look the deck keeps, by CRC.
                     case "WHEELAT":
-                        return deck.looks.has(Number(args[4]))
-                            ? ok("OK wheel")
-                            : { ok: false, message: "ERR wheel unknown" };
+                        if (!deck.looks.has(Number(args[4])))
+                            return { ok: false, message: "ERR wheel unknown" };
+                        deck.armed.add(Number(args[2]));
+                        return ok("OK wheel");
+                    // Only a key it turns can roll.
+                    case "WHEELROLL":
+                        return deck.armed.has(Number(args[2]))
+                            ? ok("OK roll")
+                            : { ok: false, message: "ERR invalid wheel" };
                     // A new session: no text slides, no live pictures.
                     case "HELLO":
                         deck.copies.forEach((copy) => {
                             copy.slides.clear();
+                            copy.sweeps.clear();
                             copy.live.clear();
                         });
                         return ok("OK hello");
@@ -238,6 +265,7 @@ vi.mock("../src/main/device/serial", async () => {
                         if (!copy) return { ok: false, message: "ERR invalid live patch" };
                         copy.live.delete(Number(args[2]));
                         copy.slides.delete(Number(args[2]));
+                        copy.sweeps.delete(Number(args[2]));
                         return ok("OK live");
                     }
                     // No text: what the key had goes.
@@ -246,6 +274,12 @@ vi.mock("../src/main/device/serial", async () => {
                         if (!copy) return { ok: false, message: "ERR invalid slide" };
                         copy.slides.delete(Number(args[2]));
                         return ok("OK slide");
+                    }
+                    case "SWEEP": {
+                        const copy = find(id, signature);
+                        if (!copy) return { ok: false, message: "ERR invalid sweep" };
+                        copy.sweeps.delete(Number(args[2]));
+                        return ok("OK sweep");
                     }
                     default:
                         return ok("OK");
@@ -258,6 +292,7 @@ vi.mock("../src/main/device/serial", async () => {
                     if (actual.crc32(payload) !== crc)
                         return { ok: false, message: "ERR checksum mismatch" };
                     deck.looks.add(crc);
+                    if (header.split(" ")[3] !== "-1") deck.armed.add(Number(header.split(" ")[3]));
                     return ok("OK wheel");
                 }
                 if (header.startsWith("LIVE ")) {
@@ -284,6 +319,7 @@ vi.mock("../src/main/device/serial", async () => {
                     deck.pending!.keys[cell] = next;
                     deck.pending!.live.delete(cell);
                     deck.pending!.slides.delete(cell);
+                    deck.pending!.sweeps.delete(cell);
                     return ok("OK image");
                 }
                 if (header.startsWith("SLIDE ")) {
@@ -296,11 +332,22 @@ vi.mock("../src/main/device/serial", async () => {
                     copy.slides.set(target!, crc!);
                     return ok("OK slide");
                 }
+                if (header.startsWith("SWEEP ")) {
+                    deck.commands.push(header);
+                    const [id, signature, target, , crc] = header.split(" ").slice(1).map(Number);
+                    const copy = find(id!, signature!);
+                    if (!copy) return { ok: false, message: "ERR invalid sweep" };
+                    if (actual.crc32(payload) !== crc)
+                        return { ok: false, message: "ERR checksum mismatch" };
+                    copy.sweeps.set(target!, crc!);
+                    return ok("OK sweep");
+                }
                 if (header.startsWith("ALT ")) return ok("OK alternate");
                 deck.commands.push(`PUSH ${cell}`);
                 deck.pending!.keys[cell] = Uint8Array.from(payload);
                 deck.pending!.live.delete(cell);
                 deck.pending!.slides.delete(cell);
+                deck.pending!.sweeps.delete(cell);
                 return ok("OK image");
             };
         },
@@ -336,7 +383,10 @@ const glyphs = (chars: string) =>
     [...chars].map((char) => ({ char, width: 1, alpha: new Uint8Array(4).fill(255) }));
 const DICE = { type: "dice", mode: "list", options: "a, b, c, d, e, f" } as const;
 
-afterAll(() => fixture.events.get("before-quit")?.({ preventDefault: () => {} }));
+afterAll(async () => {
+    fixture.events.get("before-quit")?.({ preventDefault: () => {} });
+    await rm(fixture.folder, { recursive: true, force: true });
+});
 
 describe("widget keys on the deck", () => {
     it("never leave a moved widget's picture where it was", async () => {
@@ -574,8 +624,8 @@ describe("widget keys on the deck", () => {
         await vi.waitFor(async () =>
             expect((await states())["home:8"]).toEqual({ level: 55, muted: false }),
         );
-        expect(fixture.host.filter((asked) => asked.op === "volume")).toEqual([
-            { op: "volume", fields: { level: 55 } },
+        expect(fixture.host.filter((asked) => asked.op === "level")).toEqual([
+            { op: "level", fields: { flow: 0, level: 55, unmute: true } },
         ]);
         // The app's next look is where the deck's dial already is: nothing goes.
         await call("deck:wheel", "home", 8, dial, [], 55);
@@ -659,6 +709,24 @@ describe("widget keys on the deck", () => {
         const sent = wheelLines().length;
         await call("deck:wheel", "home", 12, die, [], landed);
         expect(wheelLines()).toHaveLength(sent);
+        // Should the deck drop it (older firmware, its look pushed out by
+        // another), a tap still rolls - in the app - and the look goes again.
+        fixture.deck.armed.delete(12);
+        fixture.deck.looks.clear();
+        press(12, true);
+        press(12, false);
+        await vi.waitFor(async () =>
+            expect((await states())["home:12"]).toMatchObject({ value: expect.any(Number) }),
+        );
+        expect((await states())["home:12"]).not.toHaveProperty("rest");
+        const again = wheelLines().length;
+        await call("deck:wheel", "home", 12, die, [], landed);
+        expect(
+            wheelLines()
+                .slice(again)
+                .map((line) => line.split(" ")[0]),
+        ).toEqual(["WHEELAT", "WHEEL"]);
+        expect(fixture.deck.armed.has(12)).toBe(true);
         // A pose that is not one is refused before it is sent.
         await expect(call("deck:wheel", "home", 12, die, [], 7)).rejects.toThrow(/Invalid wheel/);
     });
@@ -741,36 +809,38 @@ describe("widget keys on the deck", () => {
         const title = text(200);
         const picture = new Uint8Array(BYTES).fill(0x51);
         let from = fixture.deck.commands.length;
-        expect(await call("deck:live", "home", 4, picture, title)).toMatchObject({ ok: true });
+        expect(await call("deck:live", "home", 4, picture, { slide: title })).toMatchObject({
+            ok: true,
+        });
         // The picture first: the old picture never shows under the new text.
         expect(names(from)).toEqual(["LIVE", "SLIDE"]);
         expect(fixture.deck.shown!.slides.get(4)).toBe(crc32(title));
 
         // The same text again costs nothing; a new picture under it goes alone.
         from = fixture.deck.commands.length;
-        await call("deck:live", "home", 4, picture, title);
+        await call("deck:live", "home", 4, picture, { slide: title });
         expect(names(from)).toEqual([]);
-        await call("deck:live", "home", 4, new Uint8Array(BYTES).fill(0x52), title);
+        await call("deck:live", "home", 4, new Uint8Array(BYTES).fill(0x52), { slide: title });
         expect(names(from)).toEqual(["LIVE"]);
         // Where the app says nothing of text, it is left as it is.
         await call("deck:live", "home", 4, picture);
         expect(fixture.deck.shown!.slides.get(4)).toBe(crc32(title));
         // New text replaces it; none takes it away.
         const next = text(90);
-        await call("deck:live", "home", 4, picture, next);
+        await call("deck:live", "home", 4, picture, { slide: next });
         expect(fixture.deck.shown!.slides.get(4)).toBe(crc32(next));
-        await call("deck:live", "home", 4, picture, null);
+        await call("deck:live", "home", 4, picture, { slide: null });
         expect(fixture.deck.commands.at(-1)).toMatch(/^SLIDE 0 \d+ 4 0 0$/);
         expect(fixture.deck.shown!.slides.has(4)).toBe(false);
         // Text the deck would refuse is refused here.
         await expect(
-            call("deck:live", "home", 4, picture, Uint8Array.from([1, 1, 0])),
+            call("deck:live", "home", 4, picture, { slide: Uint8Array.from([1, 1, 0]) }),
         ).rejects.toThrow(/Invalid sliding text/);
 
         // A new version of the page carries the key's picture and the text
         // sliding over it, so neither goes again - and loading hands a hidden
         // page's text over with its picture.
-        await call("deck:live", "home", 4, picture, title);
+        await call("deck:live", "home", 4, picture, { slide: title });
         const changed = black();
         changed[14] = face;
         from = fixture.deck.commands.length;
@@ -782,9 +852,14 @@ describe("widget keys on the deck", () => {
             ],
             {
                 widgets: [
-                    { pageId: "tools", cell: 0, frame: picture, slide: title },
+                    { pageId: "tools", cell: 0, frame: picture, overlays: { slide: title } },
                     // Text the deck would refuse: that widget is left out.
-                    { pageId: "tools", cell: 0, frame: picture, slide: Uint8Array.from([9]) },
+                    {
+                        pageId: "tools",
+                        cell: 0,
+                        frame: picture,
+                        overlays: { slide: Uint8Array.from([9]) },
+                    },
                 ],
                 looks: [],
             },
@@ -796,14 +871,73 @@ describe("widget keys on the deck", () => {
         expect(loading.filter((line) => line.startsWith("SLIDE"))).toHaveLength(1);
         expect(fixture.deck.shown!.slides.get(4)).toBe(crc32(title));
         from = fixture.deck.commands.length;
-        await call("deck:live", "home", 4, picture, title);
+        await call("deck:live", "home", 4, picture, { slide: title });
         expect(names(from)).toEqual([]);
         // A key's picture dropped takes its text: a new picture brings both back.
-        await call("deck:live", "home", 4, new Uint8Array(BYTES).fill(0x63), null);
+        await call("deck:live", "home", 4, new Uint8Array(BYTES).fill(0x63), { slide: null });
         expect(fixture.deck.shown!.slides.has(4)).toBe(false);
         from = fixture.deck.commands.length;
-        await call("deck:live", "home", 4, picture, title);
+        await call("deck:live", "home", 4, picture, { slide: title });
         expect(names(from)).toEqual(["LIVE", "SLIDE"]);
+    });
+
+    it("hands the deck a ring's arc to move: once while its motion holds, in this PC's clock", async () => {
+        const { crc32 } = await import("../src/main/device/serial");
+        const arc = (motion: SweepMotion) =>
+            encodeSweep({
+                ...{ x: 16, y: 16, r: 9, width: 2, color: "#ffffff", alpha: 1 },
+                ...{ glow: 0, reach: 0, motion },
+                motion,
+            });
+        const names = (from: number) =>
+            fixture.deck.commands.slice(from).map((line) => line.split(" ")[0]);
+        const digits = (fill: number) => new Uint8Array(BYTES).fill(fill);
+        const running = arc({ zero: Date.now() - 4000, turn: 60_000, round: true });
+        let from = fixture.deck.commands.length;
+        const before = Date.now();
+        await call("deck:live", "home", 4, digits(0x71), { sweep: running });
+        // The picture with its track, then the arc - its line ending with the
+        // clock it moves by, as it was sent.
+        expect(names(from)).toEqual(["LIVE", "SWEEP"]);
+        const line = fixture.deck.commands.at(-1)!.split(" ");
+        expect(line.slice(4, 6)).toEqual([String(running.length), String(crc32(running))]);
+        expect(Number(line[6])).toBeGreaterThanOrEqual(before);
+        expect(Number(line[6])).toBeLessThanOrEqual(Date.now());
+        expect(fixture.deck.shown!.sweeps.get(4)).toBe(crc32(running));
+
+        // Each second's digits go alone: the arc's motion has not changed.
+        from = fixture.deck.commands.length;
+        await call("deck:live", "home", 4, digits(0x72), { sweep: running });
+        await call("deck:live", "home", 4, digits(0x73), { sweep: running });
+        expect(names(from)).toEqual(["LIVE", "LIVE"]);
+        // Paused, it is held: a new arc.
+        const paused = arc({ share: 0.4 });
+        from = fixture.deck.commands.length;
+        await call("deck:live", "home", 4, digits(0x74), { sweep: paused });
+        expect(names(from)).toEqual(["LIVE", "SWEEP"]);
+        // Gone, it goes before the picture that has none: never over it.
+        from = fixture.deck.commands.length;
+        await call("deck:live", "home", 4, digits(0x75), { sweep: null });
+        expect(fixture.deck.commands.slice(from)[0]).toMatch(/^SWEEP 0 \d+ 4 0 0 0$/);
+        expect(names(from)).toEqual(["SWEEP", "LIVE"]);
+        expect(fixture.deck.shown!.sweeps.has(4)).toBe(false);
+        // One the deck would refuse is refused here.
+        await expect(
+            call("deck:live", "home", 4, digits(0x75), { sweep: running.slice(0, 20) }),
+        ).rejects.toThrow(/Invalid ring/);
+
+        // A new version of the page carries the arc with the key's picture.
+        await call("deck:live", "home", 4, digits(0x76), { sweep: running });
+        const changed = black();
+        changed[14] = face;
+        await call("pages:cache", [
+            { pageId: "home", frames: changed, toggleFrames: [] },
+            { pageId: "tools", frames: black(), toggleFrames: [] },
+        ]);
+        expect(fixture.deck.shown!.sweeps.get(4)).toBe(crc32(running));
+        from = fixture.deck.commands.length;
+        await call("deck:live", "home", 4, digits(0x76), { sweep: running });
+        expect(names(from)).toEqual([]);
     });
 
     it("sends a page's new version as its changed keys alone, each a small patch", async () => {
@@ -841,5 +975,66 @@ describe("widget keys on the deck", () => {
         const { crc32 } = await import("../src/main/device/serial");
         const last = fixture.deck.commits.at(-1)!;
         expect(crc32(Buffer.concat(last.keys))).toBe(last.signature);
+    });
+});
+
+describe("pages on the deck", () => {
+    it("answers pictures drawn for a profile that changed meanwhile as stale, not as an error", async () => {
+        const config = (await call("config:get")) as DeckConfig;
+        const pages = config.pages.map((page) => ({
+            pageId: page.id,
+            frames: black(),
+            toggleFrames: [],
+        }));
+        // A toggle key saved while pictures drawn without it waited to go.
+        const next: DeckConfig = structuredClone(config);
+        next.pages[0]!.keys[14] = {
+            label: "Site",
+            icon: "Globe",
+            color: "#eee8da",
+            behavior: "toggle",
+            action: { kind: "website", url: "https://example.com" },
+        };
+        await call("config:save", next);
+        expect(await call("pages:cache", pages)).toMatchObject({ ok: false, stale: true });
+        // A page added meanwhile: the same.
+        const more: DeckConfig = structuredClone(next);
+        more.pages.push({ id: "late", name: "Late", parentId: "home", keys: {} });
+        await call("config:save", more);
+        expect(
+            await call("pages:cache", [
+                ...pages,
+                { pageId: "home", frames: black(), toggleFrames: [] },
+            ]).catch((error: unknown) => String(error)),
+        ).toMatch(/Invalid cached page/);
+        expect(await call("pages:cache", pages)).toMatchObject({ ok: false, stale: true });
+        await call("config:save", config);
+    });
+
+    it("goes Back to the page a page was opened from, else to its parent", async () => {
+        const config = (await call("config:get")) as DeckConfig;
+        const next: DeckConfig = structuredClone(config);
+        next.pages.push(
+            { id: "debug", name: "Debug", parentId: "home", keys: {} },
+            { id: "discord", name: "Discord", parentId: "home", keys: {} },
+        );
+        next.pages.find((page) => page.id === "debug")!.keys[0] = {
+            label: "Discord",
+            icon: "Folder",
+            color: "#eee8da",
+            action: { kind: "page", pageId: "discord" },
+        };
+        next.activePageId = "home";
+        await call("config:save", next);
+        const active = async () => ((await call("config:get")) as DeckConfig).activePageId;
+        // Home → Debug → (its key) Discord → Back → Debug → Back → Home.
+        await call("page:navigate", "debug");
+        expect(await call("action:run", "debug", 0)).toMatchObject({ ok: true });
+        expect(await active()).toBe("discord");
+        expect(await call("action:run", "discord", 10)).toMatchObject({ message: "Back" });
+        expect(await active()).toBe("debug");
+        await call("page:back", "debug");
+        expect(await active()).toBe("home");
+        await call("config:save", config);
     });
 });

@@ -1,4 +1,4 @@
-import { displayedKey, keyAddress } from "../../../../shared/config";
+import { displayedKey, ICON_SIZES, keyAddress } from "../../../../shared/config";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { KeyIcon } from "../../components/key-icon";
@@ -7,12 +7,18 @@ import type {
     Artwork,
     DeckPage,
     KeyAppearance,
+    KeyConfig,
     KeyStates,
 } from "../../../../shared/config";
+import type { IntegrationId } from "../../../../shared/integrations/integration";
 import type { Widget, WidgetState } from "../../../../shared/widgets";
+import type { KeyOverlays } from "../../../../shared/api";
 import { encodeSlide, SLIDE_FEEL } from "../../../../shared/slide-spec";
 import type { SlideLine } from "../../../../shared/slide-spec";
-import { drawWidget } from "../widgets/draw-widget";
+import { encodeSweep } from "../../../../shared/sweep-spec";
+import type { SweepArc } from "../../../../shared/sweep-spec";
+import { fade, GREY, strike } from "../widgets/canvas-kit";
+import { drawWidget, widgetLook } from "../widgets/draw-widget";
 export async function loadImage(source: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -68,11 +74,17 @@ export function drawArtwork(
     );
     ctx.restore();
 }
+/**
+ * A key's picture. `disabled`, it is drawn as a widget out of reach is: its
+ * icon grey and struck through, its label grey, an image greyed and darkened -
+ * a key whose app Decky cannot reach.
+ */
 export async function renderKey(
     key: (KeyAppearance & { action?: Action }) | undefined,
     w: number,
     h: number,
     back = false,
+    disabled = false,
 ): Promise<HTMLCanvasElement> {
     const canvas = document.createElement("canvas");
     canvas.width = w;
@@ -85,10 +97,22 @@ export async function renderKey(
         drawWidget(ctx, key.action.widget, widgetLook(key), w, h);
         return canvas;
     }
-    ctx.fillStyle = key?.background ?? "#000000";
+    const ground = key?.background ?? "#000000";
+    ctx.fillStyle = ground;
     ctx.fillRect(0, 0, w, h);
     if (!key && !back) return canvas;
-    if (key?.artwork) drawArtwork(ctx, await loadImage(key.artwork.source), key.artwork, w, h);
+    if (key?.artwork) {
+        drawArtwork(ctx, await loadImage(key.artwork.source), key.artwork, w, h);
+        if (disabled) {
+            ctx.save();
+            ctx.globalCompositeOperation = "saturation";
+            ctx.fillStyle = GREY;
+            ctx.fillRect(0, 0, w, h);
+            ctx.restore();
+            ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+            ctx.fillRect(0, 0, w, h);
+        }
+    }
     const hasLabel = back || Boolean(key?.label.trim());
     if (key?.artwork && hasLabel) {
         const shade = ctx.createLinearGradient(0, h * 0.45, 0, h);
@@ -104,23 +128,33 @@ export async function renderKey(
     const gap = ((key?.labelGap ?? 8) * h) / 120;
     let labelY = h * 0.85;
     if (!key?.artwork) {
-        const size = Math.round(w * 0.3);
+        // A third of the key, times the icon size set in Appearance.
+        const size = Math.round((w * 0.3 * (key?.iconSize ?? ICON_SIZES.usual)) / 100);
         const svg = renderToStaticMarkup(
             createElement(KeyIcon, { name: back ? "back" : (key?.icon ?? "plus"), size }),
-        ).replaceAll("currentColor", key?.color ?? "#eeeeee");
+        ).replaceAll("currentColor", disabled ? GREY : (key?.color ?? "#eeeeee"));
         const icon = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
         const labelHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
         const iconY = hasLabel ? (h - size - gap - labelHeight) / 2 : (h - size) / 2;
         labelY = iconY + size + gap + metrics.actualBoundingBoxAscent;
+        ctx.globalAlpha = disabled ? 0.45 : 1;
         ctx.drawImage(icon, (w - size) / 2, iconY, size, size);
-    }
-    ctx.fillStyle = key?.color ?? "#eeeeee";
+        ctx.globalAlpha = 1;
+        if (disabled)
+            strike(ctx, w / 2, iconY + size / 2, size * 0.62, Math.max(1.5, size * 0.08), ground);
+    } else if (disabled)
+        strike(
+            ctx,
+            w / 2,
+            hasLabel ? h * 0.42 : h / 2,
+            w * 0.2,
+            Math.max(1.5, w * 0.03),
+            "rgba(0, 0, 0, 0.6)",
+        );
+    ctx.fillStyle = disabled ? fade(GREY, 0.5) : (key?.color ?? "#eeeeee");
     ctx.font = `600 ${Math.round(w * 0.12)}px Segoe UI`;
     if (hasLabel) ctx.fillText(back ? "Back" : (key?.label ?? ""), w / 2, labelY, w * 0.9);
     return canvas;
-}
-function widgetLook(key: KeyAppearance): { background: string; color: string; label: string } {
-    return { background: key.background ?? "#000000", color: key.color, label: key.label };
 }
 
 /** A canvas as the deck's RGB565, little-endian. */
@@ -138,22 +172,12 @@ export function toRgb565(canvas: HTMLCanvasElement, width: number, height: numbe
     return bytes;
 }
 
-/** A widget key as it looks now, for a LIVE update. */
-export function widgetFrame(
-    key: KeyAppearance,
-    widget: Widget,
-    state: WidgetState | undefined,
-    now: number,
-    width: number,
-    height: number,
-): Uint8Array {
-    return widgetParts(key, widget, state, now, width, height, false).frame;
-}
-
 /**
- * A widget key as it looks now, and - where the deck slides text along
- * (`slides`) - its text too long for the key, which the picture leaves out:
- * the SLIDE payload, or null for none.
+ * A widget key as the deck gets it: its picture, and what the deck draws over
+ * it by itself - where it slides text (`slides`, slide=1) the text too long for
+ * the key, and where it moves rings' arcs (`sweeps`, sweep=1) the ring's arc.
+ * Each is null where the key has none, and left out where the deck draws no
+ * such thing: then it is in the picture.
  */
 export function widgetParts(
     key: KeyAppearance,
@@ -162,39 +186,68 @@ export function widgetParts(
     now: number,
     width: number,
     height: number,
-    slides: boolean,
-): { frame: Uint8Array; slide: Uint8Array | null } {
+    deck: { slides: boolean; sweeps: boolean },
+): { frame: Uint8Array; overlays: KeyOverlays } {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    const lines: SlideLine[] | undefined = slides ? [] : undefined;
+    const lines: SlideLine[] | undefined = deck.slides ? [] : undefined;
+    const arcs: SweepArc[] | undefined = deck.sweeps ? [] : undefined;
     const ctx = canvas.getContext("2d")!;
-    drawWidget(ctx, widget, widgetLook(key), width, height, { state, now, slides: lines });
-    return {
-        frame: toRgb565(canvas, width, height),
-        slide: lines?.length ? encodeSlide({ feel: SLIDE_FEEL, lines }) : null,
-    };
+    drawWidget(ctx, widget, widgetLook(key), width, height, {
+        state,
+        now,
+        slides: lines,
+        sweeps: arcs,
+    });
+    const overlays: KeyOverlays = {};
+    if (lines) overlays.slide = lines.length ? encodeSlide({ feel: SLIDE_FEEL, lines }) : null;
+    if (arcs) overlays.sweep = arcs[0] ? encodeSweep(arcs[0]) : null;
+    return { frame: toRgb565(canvas, width, height), overlays };
 }
 
+/** Whether a key controls an app out of reach (`down`): it is drawn disabled. */
+export function keyDisabled(key: KeyConfig | undefined, down: readonly IntegrationId[]): boolean {
+    return key?.action.kind === "app" && down.includes(key.action.app);
+}
+
+/** The apps out of reach that `page`'s keys control: what its pictures depend on besides it. */
+export function downOn(page: DeckPage, down: readonly IntegrationId[]): IntegrationId[] {
+    return down.filter((id) =>
+        Object.values(page.keys).some((key) => key.action.kind === "app" && key.action.app === id),
+    );
+}
+
+/**
+ * A page's pictures, as `states` show its toggles. A key controlling an app
+ * out of reach (`down`) is drawn disabled - only here: its app's toggles are
+ * all OFF then, so its ON picture never shows, and stays as the deck holds it.
+ * Switching look is a small patch to each such key, not every ON picture
+ * again, which the deck takes whole (29 KB each).
+ */
 export async function pageFrames(
     page: DeckPage,
     width: number,
     height: number,
     states: KeyStates = {},
+    down: readonly IntegrationId[] = [],
 ): Promise<Uint8Array[]> {
     return Promise.all(
         Array.from({ length: 15 }, async (_, cell) => {
+            const back = cell === 10 && page.parentId !== null;
             const canvas = await renderKey(
                 displayedKey(page.keys[cell], states[keyAddress(page.id, cell)] ?? false),
                 width,
                 height,
-                cell === 10 && page.parentId !== null,
+                back,
+                !back && keyDisabled(page.keys[cell], down),
             );
             return toRgb565(canvas, width, height);
         }),
     );
 }
 
+/** Toggle keys' ON pictures (ALT): never disabled (pageFrames). */
 export async function pageToggleFrames(
     page: DeckPage,
     width: number,

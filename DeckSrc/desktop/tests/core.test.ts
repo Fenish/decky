@@ -161,10 +161,10 @@ describe("durable settings", () => {
                 kind: "widget",
                 widget: { type: "crypto", coin: "bitcoin", style: "chart" },
             });
-            // A microphone has one look now.
+            // A microphone in a style since gone is an arc now.
             expect(loaded.pages[0]!.keys[5]!.action).toEqual({
                 kind: "widget",
-                widget: { type: "mic" },
+                widget: { type: "mic", style: "arc" },
             });
             expect((await readdir(dir)).some((name) => name.includes("recovery"))).toBe(false);
         } finally {

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createConfig } from "../../../shared/config";
 import type { DeckConfig, KeyStates, DeckPage } from "../../../shared/config";
 import type { DeckEvent, DeckStatus, PageUpload } from "../../../shared/api";
-import { pageFrames, pageToggleFrames } from "../features/artwork/artwork";
+import type { IntegrationId } from "../../../shared/integrations/integration";
+import { downOn, pageFrames, pageToggleFrames } from "../features/artwork/artwork";
+import { useAppsDown } from "../features/integrations/integration-status";
 import { useWidgetLive, widgetWarmup } from "../features/widgets/use-widget-live";
 import { useCountdownAlarms } from "../features/widgets/use-countdown-alarms";
 import type { WidgetStates } from "../../../shared/widgets";
+import { errorText } from "./error-text";
 const RETRY_MS = 4000;
 /** Handlers for some kinds of deck event, each taking its event as that kind. */
 type DeckEventHandlers = {
@@ -40,24 +43,35 @@ export function useDecky() {
     const warmed = useRef("");
     const [deviceEpoch, setDeviceEpoch] = useState(0);
     const bitmaps = useRef(new Map<string, { token: string; frames: Promise<PageUpload> }>());
+    // Apps out of reach: the keys that control them are drawn disabled.
+    const appsDown = useAppsDown(config);
     const preparePage = useCallback(
         (
             page: DeckPage,
             width: number,
             height: number,
             states: KeyStates,
-            independentToggles = false,
+            independentToggles: boolean,
+            down: readonly IntegrationId[],
         ): Promise<PageUpload> => {
             const local = Object.fromEntries(
                 Object.entries(independentToggles ? {} : states).filter(([key]) =>
                     key.startsWith(`${page.id}:`),
                 ),
             );
-            const token = JSON.stringify([page, width, height, local, independentToggles]);
+            const pageDown = downOn(page, down);
+            const token = JSON.stringify([
+                page,
+                width,
+                height,
+                local,
+                independentToggles,
+                pageDown,
+            ]);
             const previous = bitmaps.current.get(page.id);
             if (previous?.token === token) return previous.frames;
             const frames = Promise.all([
-                pageFrames(page, width, height, local),
+                pageFrames(page, width, height, local, pageDown),
                 independentToggles
                     ? pageToggleFrames(page, width, height)
                     : Promise.resolve(undefined),
@@ -72,15 +86,7 @@ export function useDecky() {
         },
         [],
     );
-    const notify = useCallback(
-        (text: string) =>
-            setMessage(
-                text
-                    .replace(/^Error: /, "")
-                    .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ""),
-            ),
-        [],
-    );
+    const notify = useCallback((text: string) => setMessage(errorText(text)), []);
     const clearMessage = useCallback(() => setMessage(""), []);
     const enteredDashboard = useCallback(() => {
         if (connectionLive.current) setDashboardReady(true);
@@ -188,6 +194,10 @@ export function useDecky() {
     const navigate = useCallback(async (id: string): Promise<void> => {
         setConfig(await window.deck.navigate(id));
     }, []);
+    /** A page's Back: the page it was opened from, else its parent. */
+    const back = useCallback(async (id: string): Promise<void> => {
+        setConfig(await window.deck.back(id));
+    }, []);
     const sync = useCallback(async (): Promise<void> => {
         if (!status.connected || busy) return;
         const page = config.pages.find((p) => p.id === config.activePageId)!;
@@ -199,15 +209,16 @@ export function useDecky() {
                 status.identity.keyHeight,
                 keyStates,
                 status.identity.protocol >= 4,
+                appsDown,
             );
             const reply = await window.deck.syncPage(page.id, upload.frames, upload.toggleFrames);
-            notify(reply.message);
+            if (!reply.stale) notify(reply.message);
         } catch (error) {
             notify(String(error));
         } finally {
             setBusy(false);
         }
-    }, [status, busy, config, keyStates, notify, preparePage]);
+    }, [status, busy, config, keyStates, notify, preparePage, appsDown]);
     useEffect(() => {
         if (!status.connected) {
             synced.current = "";
@@ -219,7 +230,9 @@ export function useDecky() {
         const page = config.pages.find((item) => item.id === config.activePageId)!;
         const independentToggles = status.identity.protocol >= 4;
         const stateToken = independentToggles ? "" : JSON.stringify(keyStates);
-        const token = `${status.identity.serial}:${JSON.stringify(page)}:${stateToken}:${deviceEpoch}`;
+        // An app coming or going redraws the shown page's keys that control it;
+        // other pages follow as they are opened.
+        const token = `${status.identity.serial}:${JSON.stringify(page)}:${stateToken}:${deviceEpoch}:${downOn(page, appsDown).join(",")}`;
         const library = `${status.identity.serial}:${JSON.stringify(config.pages)}:${stateToken}:${deviceEpoch}`;
         const preload = status.identity.protocol >= 3 && warmed.current !== library;
         if (synced.current === token && !preload) return;
@@ -246,6 +259,7 @@ export function useDecky() {
                                 status.identity.keyHeight,
                                 keyStates,
                                 independentToggles,
+                                appsDown,
                             ),
                         ),
                     );
@@ -257,7 +271,10 @@ export function useDecky() {
                               status.identity.keyWidth,
                               status.identity.keyHeight,
                               status.identity.dial === true,
-                              status.identity.slide === true,
+                              {
+                                  slides: status.identity.slide === true,
+                                  sweeps: status.identity.sweep === true,
+                              },
                           )
                         : undefined;
                     const reply = await window.deck.cachePages(pages, warmup);
@@ -266,7 +283,7 @@ export function useDecky() {
                         setLanded((value) => value + 1);
                         return;
                     }
-                    notify(reply.message);
+                    if (!reply.stale) notify(reply.message);
                 }
                 const upload = await preparePage(
                     page,
@@ -274,13 +291,14 @@ export function useDecky() {
                     status.identity.keyHeight,
                     keyStates,
                     independentToggles,
+                    appsDown,
                 );
                 const reply = await window.deck.syncPage(
                     page.id,
                     upload.frames,
                     upload.toggleFrames,
                 );
-                if (!reply.ok) notify(reply.message);
+                if (!reply.ok && !reply.stale) notify(reply.message);
                 else setLanded((value) => value + 1);
             } catch (error) {
                 notify(String(error));
@@ -293,13 +311,14 @@ export function useDecky() {
             }
         };
         void Promise.resolve().then(execute);
-    }, [status, loaded, busy, config, keyStates, notify, preparePage, deviceEpoch]);
+    }, [status, loaded, busy, config, keyStates, notify, preparePage, deviceEpoch, appsDown]);
     useWidgetLive(status, config, widgetStates, landed);
     useCountdownAlarms(config, widgetStates);
     return {
         config,
         status,
         loaded,
+        appsDown,
         everConnected,
         dashboardReady,
         booting: status.connected && booting,
@@ -314,6 +333,7 @@ export function useDecky() {
         enteredDashboard,
         save,
         navigate,
+        back,
         sync,
         setConfig,
     };

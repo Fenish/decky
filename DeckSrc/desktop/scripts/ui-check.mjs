@@ -96,6 +96,21 @@ try {
         window.__updatesChanged = () => updateListeners.forEach((fn) => fn());
         window.__appUpdate = (progress) => appUpdateListeners.forEach((fn) => fn(progress));
         window.__appUpdateCalls = { install: 0, cancel: 0, download: 0 };
+        window.__apps = {
+            obs: {
+                id: "obs",
+                health: "closed",
+                version: "",
+                values: { address: "localhost:4455" },
+                saved: { password: false },
+            },
+            // Discord: not authorized until its card's Authorize.
+            discord: { id: "discord", health: "off", version: "", values: {}, saved: {} },
+        };
+        window.__appCalls = { open: 0, download: 0 };
+        window.__presence = { enabled: false, discord: "closed", card: null };
+        const appListeners = new Set();
+        const appChanged = (id) => appListeners.forEach((fn) => fn({ ...window.__apps[id] }));
         window.deck = {
             firmwareInfo: async () => ({ ...firmware }),
             firmwareCheck: async () => ({ ...firmware, latest: { version: "1.4.0", protocol: 7 } }),
@@ -148,6 +163,60 @@ try {
                 wifi.ip = "";
                 wifi.paired = false;
                 return { ok: true, message: "Decky forgot the Wi-Fi network." };
+            },
+            // OBS: closed; opened, its WebSocket server is off until its settings are saved.
+            integrationStatus: async (id) => ({ ...window.__apps[id] }),
+            integrationOpen: async (id) => {
+                window.__appCalls.open += 1;
+                window.__apps[id] = { ...window.__apps[id], health: "off" };
+                appChanged(id);
+                return { ok: true, message: "OBS is open, but its WebSocket server is off." };
+            },
+            integrationDownload: async () => {
+                window.__appCalls.download += 1;
+            },
+            integrationAuthorize: async (id) => {
+                window.__apps[id] = { ...window.__apps[id], health: "ready", version: "Fenish" };
+                appChanged(id);
+                return { ok: true, message: "Connected to Discord as Fenish." };
+            },
+            integrationCall: async (id, name) =>
+                id === "discord" && name === "currentChannel"
+                    ? { id: "1328777481595125844", name: "General" }
+                    : null,
+            integrationSave: async (id, values) => {
+                window.__apps[id] = {
+                    ...window.__apps[id],
+                    health: "ready",
+                    version: "31.0.2",
+                    values: { address: values.address },
+                    saved: { password: values.password ? true : window.__apps[id].saved.password },
+                };
+                return { ...window.__apps[id] };
+            },
+            // Discord: off until Settings turns it on; then connected, at the deck.
+            presenceStatus: async () => ({ ...window.__presence }),
+            presenceSet: async (enabled) => {
+                window.__presence = enabled
+                    ? {
+                          enabled: true,
+                          discord: "connected",
+                          card: {
+                              details: "At the deck",
+                              state: "128 presses today",
+                              since: Date.now() - 2_530_000,
+                          },
+                      }
+                    : { enabled: false, discord: "closed", card: null };
+                return { ...window.__presence };
+            },
+            onPresenceStatus: () => () => {},
+            presenceEditing: async (editing) => {
+                window.__presenceEditing = editing;
+            },
+            onIntegrationStatus: (fn) => {
+                appListeners.add(fn);
+                return () => appListeners.delete(fn);
             },
             wifiTransport: async (transport) => {
                 wifi.transport = transport;
@@ -251,7 +320,19 @@ try {
                 return config;
             },
             navigate: async (id) => {
+                // As main does: a page remembers the one it was opened from, for its Back.
+                if (id !== config.activePageId)
+                    window.__cameFrom = { ...window.__cameFrom, [id]: config.activePageId };
                 config = { ...config, activePageId: id };
+                configListeners.forEach((fn) => fn(config));
+                return config;
+            },
+            back: async (id) => {
+                const from = window.__cameFrom?.[id];
+                const to = config.pages.some((p) => p.id === from)
+                    ? from
+                    : config.pages.find((p) => p.id === id).parentId;
+                config = { ...config, activePageId: to };
                 configListeners.forEach((fn) => fn(config));
                 return config;
             },
@@ -341,11 +422,169 @@ try {
     // Widgets are one step in, behind their own entry, with a way back.
     await expect(page.getByRole("group", { name: "Widgets", exact: true })).toHaveCount(0);
     await page.screenshot({ path: "output/decky-action-picker.png" });
-    await page.locator(".widgets-entry").click();
+    await page.locator(".picker-entry", { hasText: "Widgets" }).click();
     await expect(
         page.getByRole("group", { name: "Widgets", exact: true }).getByRole("button"),
     ).toHaveCount(13);
     await page.screenshot({ path: "output/decky-widget-picker.png" });
+    await page.getByRole("button", { name: "Back to actions", exact: true }).click();
+    // Apps are one step in too, each app's keys one further, with a way back from each.
+    await page.locator(".picker-entry", { hasText: "Apps" }).click();
+    // An app's row is its name alone.
+    await expect(
+        page.locator(".picker-entry", { hasText: "OBS Studio" }).locator("small"),
+    ).toHaveCount(0);
+    await page.locator(".picker-entry", { hasText: "OBS Studio" }).click();
+    await expect(
+        page.getByRole("group", { name: "OBS Studio", exact: true }).getByRole("button"),
+    ).toHaveText(["Recording", "Streaming"]);
+    // Its page opens with a line on how Decky stands with OBS, a rule under
+    // it, then OBS's keys.
+    const obsCard = page.getByRole("region", { name: "OBS Studio connection", exact: true });
+    await expect(obsCard).toContainText("OBS is closed");
+    await expect(
+        page.locator('.picker-heading + .app-card + hr.picker-divider + [role="group"]'),
+    ).toHaveCount(1);
+    await page.screenshot({ path: "output/decky-obs-closed.png" });
+    // Closed, its button starts OBS; the small one beside it opens its settings.
+    const connect = page.getByRole("dialog", { name: "Connect OBS Studio", exact: true });
+    await obsCard.getByRole("button", { name: "OBS Studio settings", exact: true }).click();
+    await expect(connect).toContainText("OBS Studio is closed.");
+    await connect.getByRole("button", { name: "Cancel", exact: true }).click();
+    await obsCard.getByRole("button", { name: "Open OBS", exact: true }).click();
+    await expect(obsCard).toContainText("WebSocket server off");
+    if ((await page.evaluate(() => window.__appCalls.open)) !== 1)
+        throw new Error("Open OBS did not ask main to start OBS");
+    // Open with its WebSocket server off, Connect… opens its address and
+    // password, and saving connects it and closes the dialog.
+    await expect(obsCard.getByRole("button", { name: "OBS Studio settings" })).toHaveCount(0);
+    await obsCard.getByRole("button", { name: "Connect…", exact: true }).click();
+    await expect(connect).toContainText("its WebSocket server is off");
+    await page.screenshot({ path: "output/decky-obs-connect.png" });
+    await connect.getByLabel("OBS Studio password", { exact: true }).fill("from-obs");
+    await connect.getByRole("button", { name: "Save and connect", exact: true }).click();
+    await expect(connect).toHaveCount(0);
+    await expect(obsCard).toContainText("Connected · OBS 31.0.2");
+    await page.screenshot({ path: "output/decky-obs-page.png" });
+    // The password is never shown again: the dialog says one is saved.
+    await obsCard.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(connect.getByLabel("OBS Studio password", { exact: true })).toHaveAttribute(
+        "placeholder",
+        "Saved - type to replace",
+    );
+    await connect.getByRole("button", { name: "Cancel", exact: true }).click();
+    // Picked, an app's key changes only to another of that app's widgets, its
+    // editor has the same card, and the choice is taken back to the app's page.
+    await page
+        .getByRole("group", { name: "OBS Studio", exact: true })
+        .getByRole("button", { name: "Recording", exact: true })
+        .click();
+    await expect(obsCard).toContainText("Connected · OBS 31.0.2");
+    await expect(page.getByLabel("Widget type", { exact: true }).locator("option")).toHaveText([
+        "Recording",
+        "Streaming",
+    ]);
+    await page.getByRole("button", { name: "Back to OBS Studio", exact: true }).click();
+    await page.getByRole("button", { name: "Back to apps", exact: true }).click();
+    // Discord: its card asks for permission, then its controls and its widget.
+    await page.locator(".picker-entry", { hasText: "Discord" }).click();
+    const discordCard = page.getByRole("region", { name: "Discord connection", exact: true });
+    await expect(discordCard).toContainText("Not authorized yet");
+    // No settings to type: no small settings button.
+    await expect(discordCard.getByRole("button", { name: "Discord settings" })).toHaveCount(0);
+    await discordCard.getByRole("button", { name: "Authorize", exact: true }).click();
+    await expect(discordCard).toContainText("Connected as Fenish");
+    await expect(
+        page.getByRole("group", { name: "Discord controls", exact: true }).getByRole("button"),
+    ).toHaveText([
+        "Mute",
+        "Deafen",
+        "Camera",
+        "Screen share",
+        "Noise suppression",
+        "Echo cancellation",
+        "Auto gain",
+        "Leave call",
+    ]);
+    await expect(
+        page.getByRole("group", { name: "Discord", exact: true }).getByRole("button"),
+    ).toHaveText([
+        "Voice channel",
+        "Current call",
+        "Mic switcher",
+        "Output switcher",
+        "Notifications",
+    ]);
+    await page.screenshot({ path: "output/decky-discord-page.png" });
+    // Mute is a toggle from the start: OFF as Discord is at rest, ON muted in red.
+    await page
+        .getByRole("group", { name: "Discord controls", exact: true })
+        .getByRole("button", { name: "Mute", exact: true })
+        .click();
+    await expect(page.getByLabel("Discord control", { exact: true })).toHaveValue("mute");
+    await expect(
+        page
+            .getByRole("group", { name: "Button behavior" })
+            .getByRole("button", { name: "Toggle" }),
+    ).toHaveClass(/active/);
+    await expect(page.getByLabel("Key title", { exact: true })).toHaveValue("Mute");
+    await page.getByRole("button", { name: "Back to Discord", exact: true }).click();
+    // Leave call too: ON, in red, while you are in a call.
+    await page
+        .getByRole("group", { name: "Discord controls", exact: true })
+        .getByRole("button", { name: "Leave call", exact: true })
+        .click();
+    await expect(
+        page
+            .getByRole("group", { name: "Button behavior" })
+            .getByRole("button", { name: "Toggle" }),
+    ).toHaveClass(/active/);
+    // Its two looks are named as its states, not OFF and ON.
+    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+    await expect(
+        page
+            .getByRole("group", { name: "Edit toggle appearance", exact: true })
+            .getByRole("button"),
+    ).toHaveText(["Not in a call", "In a call"]);
+    await page.getByRole("tab", { name: "Action", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Discord", exact: true }).click();
+    // The voice channel's key takes the channel you are in.
+    await page
+        .getByRole("group", { name: "Discord", exact: true })
+        .getByRole("button", { name: "Voice channel", exact: true })
+        .click();
+    await page.getByRole("button", { name: "Use current", exact: true }).click();
+    await expect(page.getByLabel("Voice channel ID", { exact: true })).toHaveValue(
+        "1328777481595125844",
+    );
+    await expect(page.locator(".channel-name")).toHaveText("General");
+    await page.screenshot({ path: "output/decky-discord-channel.png" });
+    // Its looks are in Appearance: how people sit, its name or not, and the
+    // icon it shows with no one there, at the size picked.
+    await page.getByRole("tab", { name: "Appearance", exact: true }).click();
+    const people = page.getByRole("group", { name: "People", exact: true });
+    await expect(people.getByRole("button")).toHaveText(["Grid", "Row", "Stack"]);
+    await people.getByRole("button", { name: "Stack", exact: true }).click();
+    await expect(people.getByRole("button", { name: "Stack", exact: true })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+    );
+    const channelName = page.getByRole("switch", { name: "Channel name", exact: true });
+    await expect(channelName).toHaveAttribute("aria-checked", "true");
+    await channelName.click();
+    await expect(channelName).toHaveAttribute("aria-checked", "false");
+    await page.getByLabel("Search icons", { exact: true }).fill("headset");
+    await page.getByRole("button", { name: "Use Headset icon", exact: true }).click();
+    await page.getByLabel("Icon size", { exact: true }).fill("150");
+    await expect(page.locator(".slider-value", { hasText: "150%" })).toBeVisible();
+    await page.screenshot({ path: "output/decky-discord-looks.png" });
+    // The channel kept through it all.
+    await page.getByRole("tab", { name: "Widget", exact: true }).click();
+    await expect(page.getByLabel("Voice channel ID", { exact: true })).toHaveValue(
+        "1328777481595125844",
+    );
+    await page.getByRole("button", { name: "Back to Discord", exact: true }).click();
+    await page.getByRole("button", { name: "Back to apps", exact: true }).click();
     await page.getByRole("button", { name: "Back to actions", exact: true }).click();
     await page.getByLabel("Find an action", { exact: true }).fill("spotify");
     await expect(
@@ -535,12 +774,18 @@ try {
     if (pixel[0] !== 48 || pixel[1] !== 64 || pixel[2] !== 80)
         throw new Error("Rendered background differs from selected color");
     await page.screenshot({ path: "output/decky-labelless-key.png" });
-    await expect(page.locator(".icon-options button")).toHaveCount(25);
+    // Lucide's everyday icons, then a few brands' logos (Simple Icons).
+    await expect(page.locator(".icon-options button")).toHaveCount(32);
+    await expect(page.getByRole("button", { name: "Use Discord icon", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Show more", exact: true })).toHaveCount(0);
-    await page.getByLabel("Search Lucide icons", { exact: true }).fill("air vent");
+    await page.getByLabel("Search icons", { exact: true }).fill("battle");
+    await expect(
+        page.getByRole("button", { name: "Use Battle.net icon", exact: true }),
+    ).toBeVisible();
+    await page.getByLabel("Search icons", { exact: true }).fill("air vent");
     await page.getByRole("button", { name: "Use Air Vent icon", exact: true }).click();
-    await page.getByLabel("Search Lucide icons", { exact: true }).fill("");
-    await expect(page.locator(".icon-options button")).toHaveCount(25);
+    await page.getByLabel("Search icons", { exact: true }).fill("");
+    await expect(page.locator(".icon-options button")).toHaveCount(32);
     await page.getByLabel("Key title", { exact: true }).fill("Vent");
     await page.getByLabel("Custom accent color", { exact: true }).fill("#eebb77");
     const vent = page.getByRole("button", { name: "Key 3: Vent", exact: true });
@@ -601,7 +846,7 @@ try {
             .getByRole("group", { name: "Widgets", exact: true })
             .getByRole("button", { name: "Clock", exact: true })
             .click();
-    await page.locator(".widgets-entry").click();
+    await page.locator(".picker-entry", { hasText: "Widgets" }).click();
     await pickClock();
     // Back from a widget goes to the widgets, not all the way out.
     await page.getByRole("button", { name: "Back to widgets", exact: true }).click();
@@ -654,7 +899,7 @@ try {
     await expect(page.getByRole("button", { name: "Back to widgets", exact: true })).toHaveCount(0);
     // A countdown whose time is set on the deck, with a swipe.
     await page.getByRole("button", { name: "Key 13: Unassigned", exact: true }).click();
-    await page.locator(".widgets-entry").click();
+    await page.locator(".picker-entry", { hasText: "Widgets" }).click();
     await page
         .getByRole("group", { name: "Widgets", exact: true })
         .getByRole("button", { name: "Timer", exact: true })
@@ -690,7 +935,7 @@ try {
     // A crypto price: its styles drawn side by side, then its coin. Prices are
     // live, in dollars, with no currency to pick.
     await page.getByRole("button", { name: "Key 14: Unassigned", exact: true }).click();
-    await page.locator(".widgets-entry").click();
+    await page.locator(".picker-entry", { hasText: "Widgets" }).click();
     await page
         .getByRole("group", { name: "Widgets", exact: true })
         .getByRole("button", { name: "Crypto", exact: true })
@@ -735,6 +980,9 @@ try {
     ).toBeVisible();
 
     await page.getByLabel("Key title", { exact: true }).fill("Unsaved");
+    // An open key editor tells Discord a key is being edited.
+    if (!(await page.evaluate(() => window.__presenceEditing)))
+        throw new Error("The key editor did not say a key is being edited");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Discard changes?", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Keep editing", exact: true }).click();
@@ -742,6 +990,22 @@ try {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(page.getByRole("button", { name: "Export profile", exact: true })).toBeVisible();
+    if (await page.evaluate(() => window.__presenceEditing))
+        throw new Error("The closed key editor still says a key is being edited");
+    // Discord: off by default, one switch; on, the card friends see.
+    const discord = page.getByRole("region", { name: "Discord", exact: true });
+    const onDiscord = discord.getByRole("switch", { name: "Show on Discord", exact: true });
+    const friendsSee = discord.getByRole("group", { name: "What friends see", exact: true });
+    await expect(onDiscord).toHaveAttribute("aria-checked", "false");
+    await expect(friendsSee).toHaveCount(0);
+    await onDiscord.click();
+    await expect(onDiscord).toHaveAttribute("aria-checked", "true");
+    await expect(friendsSee).toContainText("Watching");
+    await expect(friendsSee).toContainText("At the deck");
+    await expect(friendsSee).toContainText("128 presses today");
+    await discord.screenshot({ path: "output/decky-discord-settings.png" });
+    await onDiscord.click();
+    await expect(friendsSee).toHaveCount(0);
     // Firmware: the bundled release is newer than the deck's, so it is offered,
     // and the title bar counts it.
     await expect(
@@ -1009,7 +1273,7 @@ try {
     );
     if (errors.length) throw new Error(errors.join("\n"));
     console.error(
-        "UI checks passed: black defaults, sliding/recentering grid, six actions, thirteen widgets, widget search by purpose, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
+        "UI checks passed: black defaults, sliding/recentering grid, six actions, thirteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
     );
 } finally {
     await browser.close();

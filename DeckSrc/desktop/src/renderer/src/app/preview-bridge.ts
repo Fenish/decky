@@ -30,6 +30,34 @@ export function installPreviewBridge(): void {
         wifiScan: async () => [],
         wifiJoin: unavailable,
         wifiForget: unavailable,
+        // No apps are reached from the browser preview.
+        integrationStatus: async (id) => ({
+            id,
+            health: "closed",
+            version: "",
+            values: {},
+            saved: {},
+        }),
+        integrationSave: async () => {
+            throw new Error("Open Decky desktop to connect apps.");
+        },
+        onIntegrationStatus: () => () => {},
+        integrationOpen: async () => ({ ok: false, message: "Open Decky desktop to start apps." }),
+        integrationDownload: async () => {},
+        integrationAuthorize: async () => ({
+            ok: false,
+            message: "Open Decky desktop to connect apps.",
+        }),
+        integrationCall: async () => {
+            throw new Error("Open Decky desktop to connect apps.");
+        },
+        // Discord is out of reach from the browser preview.
+        presenceStatus: async () => ({ enabled: false, discord: "closed", card: null }),
+        presenceSet: async () => {
+            throw new Error("Open Decky desktop to show it on Discord.");
+        },
+        onPresenceStatus: () => () => {},
+        presenceEditing: async () => {},
         firmwareInfo: async () => ({
             appVersion: "preview",
             installed: null,
@@ -96,6 +124,11 @@ export function installPreviewBridge(): void {
         },
         navigate: async (pageId) => {
             config = { ...config, activePageId: pageId };
+            return structuredClone(config);
+        },
+        back: async (pageId) => {
+            const parent = config.pages.find((page) => page.id === pageId)?.parentId ?? "home";
+            config = { ...config, activePageId: parent };
             return structuredClone(config);
         },
         runKey: unavailable,

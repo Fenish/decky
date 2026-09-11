@@ -19,9 +19,21 @@ import type { MainWindow } from "../app/main-window";
 import type { DeckSession } from "../deck/session";
 import type { Profile } from "../profile/profile";
 import type { DeckWheels } from "../widgets/deck-wheels";
+import { OVERLAY_KINDS } from "../widgets/live-keys";
 import type { LiveKeys } from "../widgets/live-keys";
 import type { DeckPages } from "./deck-pages";
 import { warmupItems } from "./warmup";
+
+/**
+ * Pictures the window drew for the profile as it was: a save came while they
+ * waited behind another upload. The window draws them again for the profile
+ * as it is now, so this is nothing to tell anyone.
+ */
+const STALE: Reply = {
+    ok: false,
+    message: "The profile changed while its pages were sent.",
+    stale: true,
+};
 
 const toggleArtwork = (toggleFrames: PageUpload["toggleFrames"]): string =>
     (toggleFrames ?? [])
@@ -74,7 +86,7 @@ export class PageSync {
     syncPage(pageId: unknown, frames: unknown, toggleFrames: unknown): Promise<Reply> {
         return this.session.serial(async (): Promise<Reply> => {
             if (typeof pageId !== "string" || pageId !== this.config.activePageId)
-                return { ok: false, message: "Page changed before sync." };
+                return { ok: false, message: "Page changed before sync.", stale: true };
             if (!this.status.connected)
                 return { ok: false, message: "Connect Decky to sync keys." };
             if (this.status.identity.protocol < 2)
@@ -100,11 +112,7 @@ export class PageSync {
             const { link } = this.session;
             if (!this.status.connected || this.status.identity.protocol < 3)
                 return { ok: false, message: "Page preloading requires Decky firmware v3." };
-            if (
-                !Array.isArray(pages) ||
-                pages.length !== this.config.pages.length ||
-                pages.length > 64
-            )
+            if (!Array.isArray(pages) || pages.length > 64)
                 throw new Error("Invalid page cache request.");
             const ids = new Set<string>();
             for (const page of pages) {
@@ -112,22 +120,32 @@ export class PageSync {
                     typeof page !== "object" ||
                     page === null ||
                     typeof page.pageId !== "string" ||
-                    ids.has(page.pageId) ||
-                    !this.config.pages.some((item) => item.id === page.pageId)
+                    ids.has(page.pageId)
                 )
                     throw new Error("Invalid cached page.");
                 this.validateFrames(page.frames);
                 ids.add(page.pageId);
             }
+            // Pages added or removed since the window drew these.
+            if (
+                ids.size !== this.config.pages.length ||
+                this.config.pages.some((item) => !ids.has(item.id))
+            )
+                return STALE;
             const capacity = this.status.identity.cacheSlots ?? 8;
             if (pages.length > capacity)
                 return {
                     ok: false,
                     message: `Decky can hold ${capacity} page snapshots in memory; this profile has ${pages.length}. The current page will still work.`,
                 };
-            const warm = warmupItems(warmup, this.status, this.config, (slide) =>
-                this.live.validSlide(slide),
-            );
+            const warm = warmupItems(warmup, this.status, this.config, (overlays) => {
+                try {
+                    this.live.validOverlays(overlays);
+                    return true;
+                } catch {
+                    return false;
+                }
+            });
             this.pages.deviceReady = false;
             if (!this.pages.cacheInitialized) {
                 // The deck's progress counts every key, ON picture, widget
@@ -139,9 +157,9 @@ export class PageSync {
                 const reply = await link.command(`HELLO ${pages.length}${units}`, 2000);
                 if (!reply.ok) return reply;
                 // A new session on the deck: it forgets which keys have wheels,
-                // and any text it slid.
+                // and every overlay it drew.
                 this.wheels.clear();
-                this.live.clearSlides();
+                this.live.clearOverlays();
                 // Uploads over USB in 2 KB blocks where the deck takes them.
                 if ((this.status.identity.block ?? 0) >= 2048) await link.useBlock(2048);
             }
@@ -161,21 +179,14 @@ export class PageSync {
                 const index = this.config.pages.findIndex((page) => page.id === item.pageId);
                 const record = this.pages.uploaded.get(item.pageId);
                 if (index < 0 || !record) continue;
-                const patched = await this.live.patchKey(
+                await this.live.patchWithOverlays(
                     item.pageId,
                     index,
                     record,
                     item.cell,
                     item.frame,
+                    item.overlays ?? {},
                 );
-                if (patched.ok && item.slide !== undefined)
-                    await this.live.syncSlide(
-                        item.pageId,
-                        index,
-                        record.signature,
-                        item.cell,
-                        item.slide,
-                    );
             }
             for (const look of warm.looks) {
                 const index = this.config.pages.findIndex((page) => page.id === look.pageId);
@@ -263,17 +274,23 @@ export class PageSync {
                 .map(([cell]) => Number(cell));
             if (
                 !Array.isArray(toggleFrames) ||
-                toggleFrames.length !== expected.length ||
-                new Set(toggleFrames.map((item) => item?.cell)).size !== expected.length ||
                 toggleFrames.some(
                     (item) =>
                         !item ||
-                        !expected.includes(item.cell) ||
+                        !Number.isInteger(item.cell) ||
                         !(item.frame instanceof Uint8Array) ||
                         item.frame.length !== frames[0]!.length,
                 )
             )
                 throw new Error("Invalid toggle artwork.");
+            // ON pictures for the page's toggles as they were: a toggle added or taken away since.
+            const cells = new Set(toggleFrames.map((item) => item.cell));
+            if (
+                cells.size !== toggleFrames.length ||
+                cells.size !== expected.length ||
+                expected.some((cell) => !cells.has(cell))
+            )
+                return STALE;
         }
         const toggles = independentToggles ? toggleArtwork(toggleFrames) : "";
         // A page the deck already holds with this exact artwork, ON appearances
@@ -359,17 +376,20 @@ export class PageSync {
                 await link.command("ABORT", 1000).catch(() => {});
                 throw error;
             }
-            // The live pictures the version carried, with the text sliding over
-            // them: kept where the key is still a widget whose picture is known;
-            // dropped where it moved or went, or it would go on showing its last.
+            // The live pictures the version carried, with their overlays: kept
+            // where the key is still a widget whose picture is known; dropped
+            // where it moved or went, or it would go on showing its last.
             const patches = this.live.patchesIn(pageId, signature);
             for (let cell = 0; cell < 15; cell++) {
                 if (!(carried & (1 << cell)) || sent.has(cell)) continue;
                 const picture = copiedPatches?.get(cell);
                 if (picture && isWidgetKey(this.config.pages[index]!, cell)) {
                     patches.set(cell, picture);
-                    const text = this.live.slidesOf(pageId, base)?.get(cell);
-                    if (text !== undefined) this.live.slidesIn(pageId, signature).set(cell, text);
+                    for (const kind of OVERLAY_KINDS) {
+                        const held = this.live.overlaysOf(kind, pageId, base)?.get(cell);
+                        if (held !== undefined)
+                            this.live.overlaysIn(kind, pageId, signature).set(cell, held);
+                    }
                     continue;
                 }
                 reply = await link.command(`LIVE ${index} ${signature} ${cell} 0 0 0`, 2000);
@@ -379,7 +399,7 @@ export class PageSync {
         } else {
             // A copy the deck kept: perhaps the very one the patches went to, and
             // the same pictures with a widget moved share its signature. Read back
-            // from the card, it is as it was sent, and slides nothing.
+            // from the card, it is as it was sent, with no overlays.
             if (reply.message.includes("storage=sd")) this.live.dropCopy(pageId, signature);
             reply = await this.live.restoreKeys(pageId, index, signature);
             if (!reply.ok) return reply;

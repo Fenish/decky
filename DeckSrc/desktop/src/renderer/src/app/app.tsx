@@ -47,8 +47,10 @@ export function App() {
                     pressedCell={deck.pressedCell}
                     keyStates={deck.keyStates}
                     widgetStates={deck.widgetStates}
+                    appsDown={deck.appsDown}
                     save={deck.save}
                     navigate={deck.navigate}
+                    goBack={deck.back}
                     sync={deck.sync}
                     notify={deck.notify}
                     message={deck.message}
