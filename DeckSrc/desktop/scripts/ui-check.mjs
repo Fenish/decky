@@ -749,13 +749,16 @@ try {
     const unlabelled = page.getByRole("button", { name: "Key 3: Unlabelled action", exact: true });
     await expect(unlabelled.locator(".key-label")).toHaveCount(0);
     await expect(unlabelled).toHaveCSS("background-color", "rgb(48, 64, 80)");
-    const inkBounds = async (locator) =>
-        locator.locator("canvas").evaluate((canvas) => {
+    // Where the key's ink starts and ends down the key; `part` looks at that
+    // much of it from the top, to weigh the icon without the label under it.
+    const inkBounds = async (locator, part = 1) =>
+        locator.locator("canvas").evaluate((canvas, share) => {
             const pixels = canvas
                 .getContext("2d")
-                .getImageData(0, 0, canvas.width, canvas.height).data;
+                .getImageData(0, 0, canvas.width, Math.round(canvas.height * share)).data;
             const rows = [];
-            for (let y = 0; y < canvas.height; y++)
+            const bottom = Math.round(canvas.height * share);
+            for (let y = 0; y < bottom; y++)
                 for (let x = 0; x < canvas.width; x++) {
                     const i = (y * canvas.width + x) * 4;
                     if (pixels[i] > 150 && pixels[i + 1] > 120) {
@@ -764,7 +767,7 @@ try {
                     }
                 }
             return { min: Math.min(...rows), max: Math.max(...rows), height: canvas.height };
-        });
+        }, part);
     const bounds = await inkBounds(unlabelled);
     if (Math.abs((bounds.min + bounds.max) / 2 - bounds.height / 2) > 2)
         throw new Error("Labelless icon not centered");
@@ -806,12 +809,30 @@ try {
             )
             .toBe(true);
     await matchingPreviews();
-    const spaced = await inkBounds(vent);
+    // A label leaves the icon where it was, in the middle of the key: only the
+    // top of the key is weighed, so the label's own ink is left out of it. The
+    // key is taken as the selected one, since its name follows its title.
+    const selected = page.locator(".deck-key.selected");
+    const labelled = await inkBounds(selected, 0.62);
+    await page.getByLabel("Key title", { exact: true }).fill("");
+    await matchingPreviews();
+    const bare = await inkBounds(selected, 0.62);
+    if (Math.abs(labelled.min - bare.min) > 1 || Math.abs(labelled.max - bare.max) > 1)
+        throw new Error("A label moved the icon");
+    await page.getByLabel("Key title", { exact: true }).fill("Vent");
+    // A big icon gives way to the label, by as much as Icon/text spacing asks.
+    await page.getByLabel("Icon size", { exact: true }).fill("200");
     await page.getByRole("slider", { name: "Icon/text spacing", exact: true }).press("Home");
     await matchingPreviews();
-    const tight = await inkBounds(vent);
-    if (tight.min <= spaced.min || tight.max >= spaced.max)
-        throw new Error("Spacing did not move both icon and text inward");
+    const tight = await inkBounds(selected, 0.62);
+    await page.getByRole("slider", { name: "Icon/text spacing", exact: true }).press("End");
+    await matchingPreviews();
+    const spaced = await inkBounds(selected, 0.62);
+    if (spaced.min <= tight.min || spaced.max >= tight.max)
+        throw new Error("Spacing did not make room for the label");
+    await page.getByLabel("Icon size", { exact: true }).fill("100");
+    await page.getByRole("slider", { name: "Icon/text spacing", exact: true }).press("Home");
+    await matchingPreviews();
     await page.getByRole("button", { name: "Save key", exact: true }).click();
     const accent = await vent.locator("canvas").evaluate((canvas) => {
         const pixels = canvas
