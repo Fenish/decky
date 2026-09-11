@@ -1051,12 +1051,7 @@ describe("pages on the deck", () => {
         expect(await call("pages:cache", pages, warmup)).toMatchObject({ ok: false });
         expect(Array.from(copy().live.get(3)!)).toEqual(Array.from(picture));
         fixture.deck.refuse = null;
-        const mark = fixture.deck.commands.length;
         expect(await call("pages:cache", pages, warmup)).toMatchObject({ ok: true });
-        console.log(
-            "RUN2",
-            fixture.deck.commands.slice(mark).map((l) => l.split(" ").slice(0, 3).join(" ")),
-        );
         // The same picture, unchanged since: it has to go again, or the key
         // would stay blank until whatever it shows changes.
         expect(Array.from(copy().live.get(3) ?? [])).toEqual(Array.from(picture));
