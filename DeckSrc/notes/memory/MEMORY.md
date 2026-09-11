@@ -80,3 +80,19 @@ project context.
   `reset=`, deck.log, the core dump (empty means power), error 31 means replug
 - [firmware-golden-run](firmware-golden-run.md) — prove a firmware change keeps
   behaviour: tools/golden_run.py record, flash, check (replies + screens)
+- [generic-over-copies](generic-over-copies.md) — handler tables, not chains;
+  one generic module told what it is, never per-type wrapper files
+- [boot-loads-everything](boot-loads-everything.md) — nothing may be slow the
+  first time after boot: every look, state and helper is loaded while the deck
+  loads
+- [discord-mute-state](discord-mute-state.md) — mute/deafen from Discord's local
+  storage, ~5 s behind; RPC voice refused even for Decky's own app
+- [discord-rich-presence](discord-rich-presence.md) — the public app ID is all
+  it needs; never "Playing", only one of those shows
+- [discord-rpc-control](discord-rpc-control.md) — full RPC control via
+  StreamKit; channel members without joining; camera and stream state from
+  Windows
+- [integrations](integrations.md) — third-party apps (OBS first): declared in
+  shared/integrations, a service each in main, widgets grouped by app
+- [user-does-testing](user-does-testing.md) — the user tests on the deck and in
+  the app; Claude checks the code and hands over

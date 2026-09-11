@@ -29,19 +29,25 @@ deck receives pictures, and looks for the keys it turns itself.
   - **New versions:** a version built from a copy carries its live pictures and
     sliding text (`live=<mask>` in the `CACHE` reply). Only keys whose own
     picture changed go, as `PATCH`.
-  - **Tracking:** `livePatched` in `main/widgets/live-keys.ts` (page id, then signature)
-    mirrors what each copy shows.
+  - **Tracking:** `livePatched` in `main/widgets/live-keys.ts` (page id, then
+    signature) mirrors what each copy shows.
   - **Widgets moved or removed:** such keys get their live picture dropped
     (`LIVE … 0 0 0`), or a moved clock leaves its time behind
     ([[2026-09-11-widgets-live-patches]]).
-  - **Why:** before this, an edit re-sent every live widget whole, 10.4 s on the
-    Debug page; now it takes 0.66 s.
+  - **Why:** re-sending every live widget whole took 10.4 s on the Debug page.
+  - **The card save never holds an edit:** the deck shows a committed page
+    first, then its main loop writes it to the card in 8 KB slices, so `COMMIT`
+    answers in about 6 ms. Anything else on the card, or reusing a page slot,
+    finishes the save first. Keep long card writes out of command handlers: the
+    deck reads no touches and runs no animations meanwhile.
 - **Every page is warmed while the deck loads** (`warm=1`). With the page cache
-  the renderer sends each widget's picture as it is now and each deck-turned
-  key's look; the app sends them after the pages and before showing one, counted
-  in `HELLO`'s units. Afterwards a page not shown gets a widget's new picture
-  when its state changes, at most every 5 s. The user asked for this: pages they
-  switched to showed placeholders until visited.
+  the renderer sends each widget's picture as it is now and every look each
+  deck-turned key can take ([[boot-loads-everything]]): a dial's muted look too,
+  and a running countdown's drum, the page shown last. The app sends them after
+  the pages and before showing one, counted in `HELLO`'s units. Afterwards a
+  page not shown gets a widget's new picture when its state changes, at most
+  every 5 s. The user asked for this: pages they switched to showed placeholders
+  until visited.
 - **The app waits for the deck.** While it loads - on connecting, or when the
   deck restarts - the app stays on its connection screen ("Decky is starting")
   and nothing is editable; the reveal plays after.
@@ -89,17 +95,39 @@ deck receives pictures, and looks for the keys it turns itself.
     fair: see [[2026-09-11-deck-dice]].
   - **Same-kind looks:** a new look of the same kind takes over a key that is
     still moving without stopping it.
+  - **How many looks the deck keeps:** one per key and one more, and never a
+    look an armed key uses (`AnimatedKeys::LOOKS`). Released firmware up to
+    0.1.4 kept four and dropped the one armed least lately, disarming its key
+    without a word. So a refused `WHEELROLL` makes the app roll in its place and
+    forget the arming (`rollOnDeck`); the look goes again with the key's next
+    picture. Every mute makes a look of its own (greyed), so each dial on a page
+    can need two.
 - **Sliding text (`slide=1`).** A Now playing title or artist too long for the
   key is left out of its picture and sent to the deck as `SLIDE`
   (`shared/slide-spec.ts`; drawn by `features/widgets/slide.ts`). The deck
   slides it over the picture, so `LIVE` pictures change under it.
-  - **Lifetime:** it belongs to the deck's copy of the page. `liveSlides` in
-    `main/widgets/live-keys.ts` mirrors `livePatched`: a new version starts with none,
-    `HELLO` and disconnect drop everything.
-  - **Sending:** the picture goes first, then the text, and only when its CRC
-    differs. The strip must render the same every time: the media key redraws
-    every second, and new text restarts the slide.
+  - **Lifetime:** it belongs to the deck's copy of the page and goes with the
+    key's live picture. `liveOverlays` in `main/widgets/live-keys.ts` mirrors
+    `livePatched`: a new version carries it with the live picture, and `HELLO`
+    and disconnect drop everything.
+  - **Sending:** new text goes after its picture and is taken away before one,
+    only when its CRC differs. The strip must render the same every time: the
+    media key redraws every second, and new text restarts the slide.
   - See [[2026-09-11-sliding-text]].
+- **Rings' arcs (`sweep=1`).** Only OBS's 5-second countdown ring has its arc
+  moved by the deck (`SWEEP`, `shared/sweep-spec.ts`); the key's picture keeps
+  only the track. Its drawing hands the arc to `moment.sweeps` through
+  `sweepArc` (canvas-kit), with a motion: held, or `(t - zero) / turn` in the
+  PC's clock. Keep motions exact integers from widget state, so the payload is
+  identical second to second and goes once.
+  - The timer (stopwatch and countdown) and pomodoro rings step with their
+    digits, drawn into each second's picture (`timeRing`). The user tried them
+    smooth and asked for "old version" for all but OBS.
+  - Sliding text and arcs are both firmware `KeyOverlay`s and travel as
+    `KeyOverlays` (`{ slide, sweep }`) through `liveKey`, the warmup and
+    `LiveKeys`. An overlay taken away goes before the picture without it; one
+    that comes or changes, after.
+  - See [[2026-09-11-deck-rings]].
 - **Readings** (volume, mic, media, CPU, prices) come from `WidgetFeeds` and are
   never saved. Only `KEPT_STATE` fields (what a person did) go to
   `widgets.json`.
@@ -123,9 +151,9 @@ deck receives pictures, and looks for the keys it turns itself.
     klines hourly for the chart, REST then CoinGecko for a coin the stream is
     quiet about (`main/widgets/crypto-feed.ts`). US dollars only (USDT).
 - **Retired settings are dropped on load** (`retireWidgets` in
-  `shared/config.ts`): the network widget, crypto currency and interval, the
-  microphone's style. Without it an old profile fails validation and the whole
-  configuration is refused.
+  `shared/config.ts`, each kind's `retire`): the network widget, crypto currency
+  and interval; a microphone in a style since gone becomes an arc. Without it an
+  old profile fails validation and the whole configuration is refused.
 - **New firmware commands that older desktops can skip are `ID` flags**, not
   protocol bumps. Released apps reject any protocol above 7 (`serial.ts`).
 
@@ -143,15 +171,26 @@ missing from a registry does not compile.
   drawing, its settings fields, `sample` (the made-up readings its style tiles
   show), and a `deckLook` if the deck turns it.
 - **Action** (`main/widgets/actions/`, `WidgetAction`): only if a press does
-  something beyond its own state - mute, play, roll.
+  something beyond its own state - mute, play, roll. Its `gestures` table says
+  what `tap`, `double`, `triple` and `hold` do. Only an action with `double` or
+  `triple` makes its taps wait `TAP_GAP_MS` (300 ms) for another
+  (`tap-runs.ts`), so give those to a widget only where the later tap is worth
+  it.
 - **Registries:** `shared/widgets/registry.ts`,
   `renderer/src/features/widgets/kinds/registry.ts`,
   `main/widgets/actions/registry.ts`.
+- **Alike types share one generic module** ([[generic-over-copies]]): the volume
+  and the microphone are `levelKind(...)`, `levelView(device)` (the
+  `kinds/level/` folder, per-device icons and words in its `DEVICES`) and
+  `SoundAction(device)`; the helper's `level`/`mute` requests take the device's
+  flow. A turned dial goes to its action's `turned`.
 
 Anything it reads goes in `WidgetFeeds` (a line in `sync`'s `reads`) - as events
 where the source can tell of its changes - and anything a person sets that must
 survive a restart goes in `KEPT_STATE`. Keep its base picture time-free.
 Anything that must animate or follow a finger goes on the deck instead
 ([[deck-first-for-animation]]). Text that can outgrow its key goes to
-`moment.slides` through `slideLine` rather than being cut with `clip`. Removing
-a setting needs its kind's `retire`.
+`moment.slides` through `slideLine` rather than being cut with `clip`. A ring
+the deck should move goes through `sweepArc` with a motion; the user wants that
+only where asked (OBS's countdown). Removing a
+setting needs its kind's `retire`.

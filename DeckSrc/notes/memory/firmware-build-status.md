@@ -7,8 +7,10 @@ As of 2026-09-11 the panel runs the full Decky firmware (protocol 7), built
 locally as `fw=0.1.4-dirty` and not yet released: pages sent by the desktop,
 widgets patched with `LIVE`, wheels, the volume dial and 3D dice drawn by the
 deck, every page warmed while loading, 2 KB upload blocks, and `reset=` in `ID`.
-Factory firmware has been erased (backup in `factory-backup/` at the repo root).
-The touch test of 2026-09-09 is long gone.
+Since the evening of 2026-09-11 also sliding text and ring arcs drawn by the
+deck itself (`slide=1`, `sweep=1` in `ID`), with VSYNC timed from the ISR so the
+loop never blocks on it. Factory firmware has been erased (backup in
+`factory-backup/` at the repo root). The touch test of 2026-09-09 is long gone.
 
 Structure: `lib/panel` owns the RGB bus, timing, backlight, frame buffers, beam
 timing **and the GT911** - the only place that knows GPIO numbers. `lib/keygrid`

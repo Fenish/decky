@@ -58,7 +58,9 @@ the tray menu.
   start recording the shortcut there and press **Test**. A reserved combination never changes, and
   duplicating the key reserves a new one. Turn auto-assign off to type or record a combination
   yourself: Ctrl, Alt, Shift, named keys and F1–F24 are supported, and Windows-key combinations are
-  rejected rather than sent without the modifier.
+  rejected rather than sent without the modifier. Keys go through one PowerShell helper that stays
+  running (38 ms a press). It starts with Decky, or when a hotkey is first added, so the first press
+  does not wait half a second for it; stopping a running action leaves it up.
 - **Launch program:** choose a Windows `.exe`. It launches directly, without a command shell.
 - **Website:** HTTP(S) URLs open in the default browser.
 - **Script:** choose a local PowerShell `.ps1`. Background execution and waiting are separate
@@ -70,41 +72,54 @@ the tray menu.
 - **Normal:** run once per press. **Toggle:** each successful press runs the same action and
   switches OFF/ON. Each state has its own image, label, icon, color, zoom, position, rotation and
   brightness. Failed actions do not flip state. State belongs to the running Decky session and
-  resets on quit; it does not read an external application's state.
+  resets on quit. It does not read another application's state, except for an app's control
+  (Discord's mute, camera...): that toggle's ON and OFF follow the app, and the editor and the key's
+  corner name them as the control's states (Unmuted and Muted, Not in a call and In a call; the
+  control's `states`). While Decky cannot reach the app (closed, not installed, not authorized),
+  such a key shows OFF and looks disabled, on the deck and in the window: its icon grey and struck
+  through, its label grey, an image greyed - as the app's widgets do then.
 - **Widgets:** the Widgets group under the actions adds a key that draws itself and keeps itself
   current on the deck. A tap acts when the finger lifts; a hold acts the moment the press reaches
-  600 ms, with the finger still down. Widgets are always Normal buttons, and only their background
-  and accent colors are set in Appearance. Where a widget has styles, each is drawn live in the
-  editor with made-up readings, to be picked by eye. What a person did (timer, pomodoro, counter, a
+  600 ms, with the finger still down. A widget that tells double and triple taps apart (Now playing)
+  waits 300 ms after each tap for another, then acts on how many came, at once on the third. So a
+  single tap on it acts 300 ms after the finger lifts; other keys never wait. A hold or a swipe
+  drops the taps just before it. Widgets are always Normal buttons, and only their background and
+  accent colors are set in Appearance. Where a widget has styles, each is drawn live in the editor
+  with made-up readings, to be picked by eye. What a person did (timer, pomodoro, counter, a
   countdown's picked time, the last dice roll and where the die lay) is saved in
   `%APPDATA%/Decky/widgets.json` and moves with its key, so a running timer keeps counting while
   Decky is closed. Readings (ping, volume, what is playing, CPU, prices) are read again and never
   saved. Widgets on every page are kept current, not only on the page shown: while the deck loads,
-  each gets its picture as it is now and the keys it turns get their looks, counted in its progress
-  bar, so no page opens on placeholders. After that a page not shown gets a widget's new picture
-  when its state changes, at most every 5 seconds, and a clock's every 30 seconds.
+  each gets its picture as it is now, and the keys it turns get every look they can take - a dial's
+  muted look too, a countdown's drum while it runs - counted in its progress bar. So no page opens
+  on placeholders, and no press afterwards waits for a look: switching to a look the deck keeps
+  takes 20 ms, where sending a volume's arc takes 0.9 s. The page shown sends its looks last, so
+  they are the newest the deck keeps. After that a page not shown gets a widget's new picture when
+  its state changes, at most every 5 seconds, and a clock's every 30 seconds.
 - **Clock widget:** digital, analog or minimal; 24- or 12-hour, with two-digit hours in both;
   seconds; the date on the digital face; any time zone, so a second clock makes a world clock.
 - **Timer widget:** a stopwatch, or a countdown of up to 23:59:59. Tap starts or pauses; hold
-  resets. With **Set time on the deck**, a countdown at rest is a picker wheel that the deck draws
-  and turns by itself. The times sit on a drum, with the one it will run in the band, shorter above
-  and longer below, fading as the drum turns away. The numbers follow the finger 1:1. A flick
-  coasts, slows down and springs onto a time, and past either end the wheel gives a little and
-  bounces back. It runs at the panel's ~60 fps over USB and Wi-Fi alike, since nothing crosses the
-  link while it turns; the deck only reports the time it came to rest on. The times: 10 seconds a
-  step up to a minute, then minutes up to an hour, then 5 minutes up to 3 hours, plus the time set
-  in the app. A finger that moved 10 px is swiping, so it neither taps nor holds. Swipes are ignored
-  while the countdown runs; on a paused one they pick a new time and clear its progress. The time
-  picked is widget state, kept until a new time is set in the app. On firmware without `wheel=1` the
-  app turns the wheel instead, one step per 15 px of swipe, drawing each step itself. With **Sound
-  when it ends** (on by default), a countdown that runs out plays a soft kalimba on the PC, every 2
-  seconds, until its key is tapped. The tap stops the sound and sets the countdown back to its time,
-  ready for the next tap to start it. It rings on any page, and with Decky in the tray. A countdown
-  that ran out more than a minute before Decky started stays quiet. The sound is
+  resets. A stopwatch's ring goes round once a minute and a countdown's fills as its time goes, each
+  stepping with its digits once a second. Paused, the arc is held at half strength; an ended
+  countdown's is whole, in red. With **Set time on the deck**, a countdown at rest is a picker wheel
+  that the deck draws and turns by itself. The times sit on a drum, with the one it will run in the
+  band, shorter above and longer below, fading as the drum turns away. The numbers follow the finger
+  1:1. A flick coasts, slows down and springs onto a time, and past either end the wheel gives a
+  little and bounces back. It runs at the panel's ~60 fps over USB and Wi-Fi alike, since nothing
+  crosses the link while it turns; the deck only reports the time it came to rest on. The times: 10
+  seconds a step up to a minute, then minutes up to an hour, then 5 minutes up to 3 hours, plus the
+  time set in the app. A finger that moved 10 px is swiping, so it neither taps nor holds. Swipes
+  are ignored while the countdown runs; on a paused one they pick a new time and clear its progress.
+  The time picked is widget state, kept until a new time is set in the app. On firmware without
+  `wheel=1` the app turns the wheel instead, one step per 15 px of swipe, drawing each step itself.
+  With **Sound when it ends** (on by default), a countdown that runs out plays a soft kalimba on the
+  PC, every 2 seconds, until its key is tapped. The tap stops the sound and sets the countdown back
+  to its time, ready for the next tap to start it. It rings on any page, and with Decky in the tray.
+  A countdown that ran out more than a minute before Decky started stays quiet. The sound is
   `src/renderer/src/assets/sounds/kalimba.wav`, one 2-second cycle; the window may play it without a
   click (`autoplayPolicy`), since it rings hidden.
 - **Pomodoro widget:** focus and break lengths in minutes. Tap starts or pauses; hold skips to the
-  next focus or break.
+  next focus or break. Its ring fills through each focus and break, stepping once a second.
 - **Countdown widget:** days until a date, with an optional title.
 - **Counter widget:** a start value and a step. Tap counts; hold goes back to the start.
 - **Ping widget:** how long a host (google.com by default, or a LAN address) takes to answer, every
@@ -116,20 +131,21 @@ the tray menu.
 - **Now playing widget:** the track in whatever app Windows' media controls know (Spotify, a
   browser, a game). **Cover** fills the key with the album art, under the title, artist and a
   progress line; **Card** shows the art small above them. A pause badge shows when it is paused. Tap
-  plays or pauses at once, the progress stopping or moving on from where it is; hold skips to the
-  next track. Read every second. A title or artist too long for the key slides along on the deck
-  (`slide=1` firmware): it rests at its start for 1.5 s, then slides left at 30 px/s, its start
-  following after a gap, and rests again. Its edges fade. The progress line moves on under it
-  without starting it over; a new track does. The app's own preview, and older firmware, cut it
-  short with an ellipsis.
+  plays or pauses, the progress stopping or moving on from where it is; a double tap skips to the
+  next track, and a triple tap or a hold goes back to the previous one. Read every second. A title
+  or artist too long for the key slides along on the deck (`slide=1` firmware): it rests at its
+  start for 1.5 s, then slides left at 30 px/s, its start following after a gap, and rests again.
+  Its edges fade. The progress line moves on under it without starting it over; a new track does.
+  The app's own preview, and older firmware, cut it short with an ellipsis.
 - **Volume widget:** the PC's volume and its mute, as an **Arc** with the number inside, or a
   **Bar** nearly the key's height with no number. Swipe up or down on the key: with `dial=1`
   firmware the deck turns it itself, so the fill and number follow the finger at the panel's frame
   rate (1% per 1.2 px) while Windows follows every 40 ms. Older firmware steps it 2% per 15 px from
   the app. Tap mutes or unmutes, shown at once; turning it up from 0 unmutes. A change made
   elsewhere (the keyboard, Windows' own slider) shows the moment Windows says so.
-- **Microphone widget:** whether Windows has the default microphone muted: a lit disc and the mic,
-  red and struck through when muted. Tap mutes or unmutes, shown at once.
+- **Microphone widget:** the default microphone's level and its mute, drawn and turned exactly as
+  the volume is, with the mic in place of the speaker. Turning it never unmutes it, so a stray swipe
+  cannot open the mic. Grey while muted, or with no microphone.
 - **System widget:** CPU, memory or both, as **Graph** (the last minute) or **Rings**, every 1, 2 or
   5 seconds. Tap opens Task Manager.
 - **Crypto widget:** Bitcoin, Ethereum, Solana, BNB, XRP, Dogecoin, Cardano, Avalanche or Toncoin,
@@ -152,19 +168,82 @@ the tray menu.
   two turns to a side the app picks at random; a tap while it spins rolls on from there, and a flick
   rolls it too. Without the firmware for either, the result just appears.
 - **Note widget:** up to 120 characters in three sizes.
+- **Apps:** the Apps row, beside Widgets, lists the apps Decky talks to by name; each opens its own
+  page, with Back to Apps. The page opens with the app's connection in one line - how Decky stands
+  with it (not installed, closed, its API off, its password refused, or connected) - then a rule,
+  then the app's keys. The line's button fits the standing: **Open OBS** starts the app while it is
+  closed, and the line says it is starting until the app answers; **Get OBS** opens its download
+  page while it is missing; otherwise **Connect…** or **Edit** opens the app's settings. Beside Open
+  or Get, a small settings button opens them too. The settings dialog has the app's fields, what to
+  do about the standing, and Save and connect, which closes it once connected. The same line is in
+  the editor of each of its keys, and their widget list offers only that app's widgets. Passwords
+  stay on this PC, encrypted by Windows, outside the profile, and are never shown again.
+- **OBS Studio:** **Recording** and **Streaming** keys show what OBS has, so they are right however
+  it was started. Idle, a key is its glyph - a record button, a broadcast mast - and REC or LIVE.
+  Running, it is a tally light: washed and framed in on-air red, a REC or LIVE badge that brightens
+  and dims each second, and the time it has run large. Paused or reconnecting, it turns amber. The
+  countdown shows the seconds left in a glowing ring that drains smoothly - the deck moves it
+  (`SWEEP`) - with "tap to cancel" under it. Out of reach, the key is its idle look greyed, with a
+  slash through the glyph and no words; OBS's card in the app says why. Decky talks to OBS's own
+  WebSocket server (OBS 28 and later; Tools → WebSocket Server Settings), from Decky's start while
+  any OBS key exists, trying again every 3 seconds while OBS is closed. A touch counts down 5
+  seconds on the key before OBS is asked to start, or to stop what runs; a second touch within them
+  calls it off. OBS counts as installed with an installer or Steam entry, a Start Menu shortcut, or
+  a running copy. Open OBS starts the copy found the same way - from its own folder, or through
+  Steam - and tries OBS every 1.5 seconds for up to 30 while it starts its WebSocket server.
+- **Discord:** its card asks Discord's permission once (**Authorize**, then Authorize in Discord);
+  see [Discord](#discord). Its keys:
+    - **Mute**, **Deafen**, **Camera**, **Screen share**, **Noise suppression**, **Echo
+      cancellation** and **Auto gain** are toggle keys whose ON and OFF follow Discord, however it
+      was switched: from the deck, Discord itself or its shortcuts. Picked, a key starts as a
+      toggle - OFF as Discord is at rest (Mic), ON in the colour of what it means (Muted, in red) -
+      for any look of your own. A tap switches it in Discord. Deafened, Mute shows muted too, as
+      Discord mutes you then; a tap on it undeafens, as Discord's own mic button does. Camera and
+      screen share work in a call; starting a share opens Discord's picker and brings Discord to the
+      front as it was left.
+    - **Leave call** is a toggle too: ON, in red, while you are in a call; a tap leaves it.
+      Discord's RPC sets only its Standard noise suppression (`noise_suppression`); Krisp is out of
+      its reach.
+    - **Voice channel** shows a channel by its ID; **Use current** beside the field takes the one
+      you are in. **Current call** shows the call you are in, whichever it is. Both show who is in
+      it as their avatars, with initials until an avatar has come, and a green ring on whoever
+      speaks (in your own call: Discord says who speaks nowhere else). They turn green while you are
+      in it. Appearance sets how people sit - **Grid** (one large, two side by side, three as two
+      over one, four in a square), **Row** or **Stack** (overlapping, whoever speaks in front) -
+      past four, three and "+n"; **Channel name** under them or not; and the icon shown with no one
+      there, from the library, in the key's colour and at the size picked. With Discord out of
+      reach, that icon struck through. A tap on a channel's key joins it, and leaves it while you
+      are in it; on the call's, leaves the call.
+    - **Mic switcher** and **Output switcher** show the device Discord uses - the part of its name
+      that tells it apart large (HyperX Cloud II), what it is small (Microphone) - under the key's
+      icon, and a dot for each device it could use. A tap moves Discord to the next. Both are choice
+      keys, which any widget can be: its state's `choice` (`src/shared/widgets/choice.ts`: the
+      option chosen and where it is among them, `nextChoice` for a tap) drawn by
+      `features/widgets/choice-face.ts`.
+    - **Notifications** shows how many notifications Discord gave since the last tap, with Discord's
+      red badge on the last sender's avatar; with none, the key's icon. A tap opens that
+      conversation in Discord and counts from nothing again. The count survives a restart of Decky
+      or Discord. It holds only what Discord sends while Decky is linked to it: Discord lets no app
+      read unread messages or older mentions, and sends nothing while its own window is in front or
+      a game shows it in Discord's overlay.
 
 The volume, microphone and now playing widgets reach Windows through one PowerShell helper
 (`src/main/system/windows-host.ps1`), started when the first such widget appears and stopped when
-the last goes. It answers a line of JSON for each request: volume and mute through Core Audio, the
-track through Windows' media controls (the cover read once per track). A reading takes 20-60 ms.
-Asked to (`watch-audio`), it also registers Core Audio's volume callbacks on the default speaker and
+the last goes. It answers a line of JSON for each request: each device's level and mute through Core
+Audio (`level` and `mute`, with the device's flow: 0 the speaker, 1 the microphone), the track
+through Windows' media controls (the cover read once per track). A reading takes 20-60 ms. Asked to
+(`watch-audio`), it also registers Core Audio's volume callbacks on the default speaker and
 microphone - again when the default device changes - and writes a line of its own the moment either
-changes: the app never polls for the sound, besides a check every 15 seconds. Changes the app makes
-to the volume are not echoed back for 400 ms, so a dial being turned never jumps back.
+changes: the app never polls for the sound, besides a check every 15 seconds. Levels the app sets
+are not echoed back for 400 ms, so a dial being turned never jumps back.
 
 - **Pages:** create a named page and assign an Open page action to any key, including key 2. Every
-  nested page reserves key 11 (bottom left) for Back. Double-click a folder in edit mode to open it.
-  Page IDs remain stable after renames.
+  nested page reserves key 11 (bottom left) for Back. Back returns to the page it was opened from -
+  on the deck or in the window, so a page opened from several goes back to where you were - and to
+  the page it was created under when that is not known (since Decky started) or is gone.
+  Double-click a folder in edit mode to open it. Page IDs remain stable after renames. Pictures
+  drawn for the profile as it was, still waiting to go when it is saved again, are answered `stale`
+  and drawn again, with nothing said.
 - **Images:** PNG, JPEG and WebP up to 12 MB. Sources are resized to at most 640 pixels before
   storage. Adjustments are nondestructive.
 - Selecting a key edits it. **Test** saves the visible settings and executes that key. Importing
@@ -176,6 +255,9 @@ to the volume are not echoed back for 400 ms, so a dial being turned never jumps
 src/
   shared/                 Configuration and its validation, typed IPC contracts, LIVE patch and deck
                           wheel formats
+    integrations/         The apps Decky talks to: each one's name, settings fields, what is said of
+                          how Decky stands with it and its button then, and registry.ts, which names
+                          them all
     widgets.ts            The Widget union, widget state and the time helpers every widget shares
     widgets/              One kind per widget type - its settings, defaults, validation, when its
                           picture changes, what a press does - and registry.ts, which names them all
@@ -191,13 +273,19 @@ src/
                           registry of them
     profile/              The profile in memory: saving it, opening pages, running keys
     updates/              New releases, firmware installs, and Decky updating itself
+    discord/              Decky on Discord: the local pipe (discord-ipc.ts) and Rich Presence, from
+                          what the other parts know (presence.ts)
     ipc/                  Every channel the window calls; only Decky's own window is answered
-    logging/              deck.log
-    actions/              Action runner, hotkey helper, toggle state
+    logging/              deck.log and discord.log (log-file.ts)
+    actions/              Action runner, hotkey helper, toggle state, and toggles that follow an app
+                          (app-controls.ts)
     config/               Atomic saves, recovery copies, legacy migration
     device/               Serial and Wi-Fi links, the deck's line format, encrypted framing,
                           firmware flashing
     programs/             Installed programs and their icons, for the program picker
+    integrations/         The service each app has (integration.ts), settings kept encrypted by the
+                          fields it declares, and a folder per app: obs/ (its link, its finder -
+                          which also starts it - and its service), discord/ (its finder and service)
     system/               The PowerShell helper that reads and sets Windows' sound and media, and
                           tells of sound changes
   preload/                Narrow contextBridge API
@@ -213,9 +301,12 @@ src/
         connection/       Smooth obsidian disconnected screen, actual CAD model and camera transition
         dashboard/        Floating grid, sliding editor slot, pages/settings panels
         firmware/         Install progress, first install on the Disconnected page
+        integrations/     An app's connection line and dialog, at the top of its page in the picker
+                          and in its keys' editor, drawn from what the app declares
         widgets/          Widget previews, settings, and live updates to the deck
-          kinds/          One view per widget type - drawing, settings, sample readings, deck look -
-                          and registry.ts, which names them all
+          kinds/          One view per widget type - drawing, settings, sample readings, deck look
+                          (the volume and the microphone share level/) - and registry.ts, which
+                          names them all
       assets/             White SVG logo and generated artwork
       styles/             True-dark theme and responsive layout
 resources/                Application and tray icons
@@ -228,9 +319,20 @@ tests/                    Configuration, persistence, wire timing, actions, togg
 A new widget type needs its kind in `src/shared/widgets/<type>.ts`, its view in
 `src/renderer/src/features/widgets/kinds/<type>/`, an action in `src/main/widgets/actions/` if it
 does something beyond its own state, its type in the `Widget` union, and a line in each registry. A
-type missing from a registry does not compile. Key action kinds work the same way:
-`STEP_CHECKS`/`ACTION_CHECKS` in `src/shared/config.ts`, the runner's `steps` in
-`src/main/actions/runner.ts`, and `ACTION_KINDS` in the editor's `actions.ts`.
+type missing from a registry does not compile. A type that behaves like one already there takes that
+one's code, made generic, instead of a copy: another sound level is a `levelKind` in
+`src/shared/widgets/level.ts`, a row in `level/level-view.ts`'s `DEVICES`, and a `SoundAction` for
+its device. Key action kinds work the same way: `STEP_CHECKS`/`ACTION_CHECKS` in
+`src/shared/config.ts`, the runner's `steps` in `src/main/actions/runner.ts`, and `ACTION_KINDS` in
+the editor's `actions.ts`.
+
+A new app needs its id in `IntegrationId`, what it declares in `src/shared/integrations/<id>.ts`
+(name, settings fields, what is said of each standing, the button for each, its download page, and
+the controls keys can switch), a service in `src/main/integrations/<id>/` that implements
+`IntegrationService` (`open` starts the app; `authorize`, `press`, `controlState` and `call` for an
+app that has them), a row in `INTEGRATIONS` and in `IntegrationServices`, and its widgets, each a
+widget type whose kind names the app as its `group`. Its picker page - its controls, then its
+widgets - and its connection line and dialog follow from these.
 
 The renderer cannot access Node, arbitrary files, raw IPC or arbitrary serial commands. Main
 handlers validate the sender and data. Imported images are bounded raster data URLs, never remote
@@ -289,17 +391,17 @@ Profiles over eight pages fall back to active-page loading with a capacity messa
 the durable source; cached pages disappear on reset. No SD card is required.
 
 The handshake is
-`OK id decky 7 ... cache=8 storage=1 fw=<version> live=1 drag=1 wheel=1 dial=1 warm=1 block=4096 slide=1`;
+`OK id decky 7 ... cache=8 storage=1 fw=<version> live=1 drag=1 wheel=1 dial=1 warm=1 block=4096 slide=1 sweep=1`;
 `storage=1` means a card is mounted, `live=1` that the deck accepts `LIVE` patches for widgets,
 `drag=1` that it reports finger movement on keys named with `DRAG`, `wheel=1` that it draws and
-turns picker wheels itself, `dial=1` that it also turns dials (the volume), rolls drums
-(`WHEELROLL`) and throws dice, `warm=1` that while loading it takes every page's widget pictures and
-looks sent ahead and counts them in its progress, `block=` the largest block it takes uploads in
-over USB when asked with `BLOCK`, and `slide=1` that it slides text too long for its key along by
-itself (`SLIDE`). `reset=` says why the deck last started: `poweron`, `sw`, `panic`, `taskwdt`,
-`brownout` and so on. Over USB the desktop also accepts firmware v2–v6 and the `streamdeck 1`
-touch-test handshake. GPIO, RGB display timing and GT911 touch settings live in
-`../firmware/lib/panel/`.
+turns picker wheels itself, `dial=1` that it also turns dials (the volume, the microphone), rolls
+drums (`WHEELROLL`) and throws dice, `warm=1` that while loading it takes every page's widget
+pictures and looks sent ahead and counts them in its progress, `block=` the largest block it takes
+uploads in over USB when asked with `BLOCK`, `slide=1` that it slides text too long for its key
+along by itself (`SLIDE`), and `sweep=1` that it moves rings' arcs by itself (`SWEEP`). `reset=`
+says why the deck last started: `poweron`, `sw`, `panic`, `taskwdt`, `brownout` and so on. Over USB
+the desktop also accepts firmware v2–v6 and the `streamdeck 1` touch-test handshake. GPIO, RGB
+display timing and GT911 touch settings live in `../firmware/lib/panel/`.
 
 When something goes wrong with the deck, `%APPDATA%/Decky/deck.log` says what. It records a deck
 that restarted after a crash, a watchdog or a brownout (from `reset=`), a deck that started again
@@ -334,8 +436,9 @@ holds. The app remembers the live pictures in each copy the deck holds (page and
   already holds, gets its live picture dropped (`LIVE` with no bytes). Without this, a digital clock
   that moved would leave its last time behind. (Its own picture is only its background, like an
   empty key's.)
-- **The cost:** changing the volume's style on a page of 8 live widgets takes 0.66 s. One patch of
-  2.7 KB goes over, and 0.4 s of that is the card saving the page. Sending every live widget again
+- **The cost:** changing the volume's style on a page of 8 live widgets sends one patch of 2.7 KB.
+  On the deck, a small edit takes under 0.1 s from `CACHE` to the `COMMIT` reply. The deck shows the
+  page at once and writes it to its card afterwards, between frames. Sending every live widget again
   whole would take 10.4 s.
 - **A page loaded whole** goes as patches over nothing: 22 KB instead of 311 KB for that page.
 - **Out of memory:** when a live picture doesn't fit in memory, the deck refuses the patch
@@ -378,9 +481,9 @@ holds. The app remembers the live pictures in each copy the deck holds (page and
   drops the key's live picture and its sliding text; the deck drops all of them on `HELLO` and when
   the desktop goes.
 - `DRAG <mask>`: the keys (15 bits) whose finger movement the deck reports; 0 for none. The desktop
-  sends it when a page lands, naming the keys a finger turns: adjustable countdowns, the volume and
-  drums of words - not a die, which any touch throws. The deck forgets it on `HELLO` and when the
-  desktop goes offline.
+  sends it when a page lands, naming the keys a finger turns: adjustable countdowns, the volume, the
+  microphone and drums of words - not a die, which any touch throws. The deck forgets it on `HELLO`
+  and when the desktop goes offline.
 - `EV <page> <cell> MOVE <y>`: the finger's height inside a `DRAG` key, from its top, in pixels. It
   comes right after `DOWN`, then each time the finger has moved 2 px, at most every 20 ms. It is
   only ever sent for keys the desktop named, because apps from before it hand a line they don't know
@@ -389,16 +492,19 @@ holds. The app remembers the live pictures in each copy the deck holds (page and
   page shown, and the label to show, with the READY/block acknowledgements of `PUSH`. The look
   (`src/shared/wheel-spec.ts`) holds everything the deck needs to turn the wheel: the key picture
   under the numbers (as a `LIVE` patch), the characters at two sizes as the app draws them, the
-  labels, the drum's shape and how it moves. That is about 15 KB, 1 s over USB. The deck keeps the
-  last four looks by CRC. A dial's look (version 2, `dial=1`) is the key at its lowest and, as a
-  patch over it, at its highest; per pixel, the share of the range from which it shows the highest
-  (in runs); the range; finger pixels a step; and digits for the number, where it writes one (the
-  arc; the bar writes none). The deck composes each frame from these, so the volume's arc or bar
-  fills under the finger. The volume's arc is about 24 KB and its bar 7 KB. A die's look (version 3)
-  is its edge in pixels, body and pip colours, how hard it is thrown and how it slows, and the key
-  under it: about 0.4 KB; the deck draws the cube itself (`src/shared/die.ts` holds the same sums).
-  Cell -1 only keeps a look, for a page not shown yet: `OK wheel cached=1` at once if the deck has
-  it.
+  labels, the drum's shape and how it moves. That is about 15 KB, 1 s over USB. The deck keeps looks
+  by CRC, one for every key and one more, and never drops a look a key is armed with: looks no key
+  uses go first, least lately armed, and when PSRAM runs short; with no room even then it answers
+  `ERR wheel memory` and the app draws the key. Should an older deck refuse a roll (`WHEELROLL`)
+  because it dropped the key's look, the app rolls in its place and sends the look again. A dial's
+  look (version 2, `dial=1`) is the key at its lowest and, as a patch over it, at its highest; per
+  pixel, the share of the range from which it shows the highest (in runs); the range; finger pixels
+  a step; and digits for the number, where it writes one (the arc; the bar writes none). The deck
+  composes each frame from these, so the volume's arc or bar fills under the finger. The volume's
+  arc is about 24 KB and its bar 7 KB. A die's look (version 3) is its edge in pixels, body and pip
+  colours, how hard it is thrown and how it slows, and the key under it: about 0.4 KB; the deck
+  draws the cube itself (`src/shared/die.ts` holds the same sums). Cell -1 only keeps a look, for a
+  page not shown yet: `OK wheel cached=1` at once if the deck has it.
 - `WHEELAT <index> <page-CRC32> <cell> <label> <look-CRC32>`: arm a key with a look the deck keeps,
   or move it to a label; `ERR wheel unknown` asks for `WHEEL`. Label -1 takes the wheel away. The
   app arms a wheel when its page lands and whenever its time changes. A wheel ends when a `LIVE`
@@ -420,10 +526,23 @@ holds. The app remembers the live pictures in each copy the deck holds (page and
   the app draws it and read back as coverage, with its window on the key and its colour, and how it
   moves: its rest, speed, gap and fading edges. A title is about 5 KB. The deck lays it over the
   key's picture each time it has moved a pixel, redrawing only the rows it covers, so `LIVE`
-  pictures go on changing under it. It belongs to that copy of the page: a new version of the page
-  starts without it, and `HELLO` and disconnect drop it. The app sends it right after the key's
-  picture (new text on the old picture would show both), only when it differs from what that copy
-  has, and during loading for pages not shown.
+  pictures go on changing under it. It belongs to that copy of the page and goes with the key's live
+  picture: a new version of the page carries both, and `HELLO`, disconnect and dropping the live
+  picture drop it. The app sends it right after the key's picture (new text on the old picture would
+  show both), takes it away just before a picture that has none, sends it only when it differs from
+  what that copy has, and during loading for pages not shown.
+- `SWEEP <index> <page-CRC32> <cell> <bytes> <arc-CRC32> <clock>`: a ring's arc for the deck to move
+  (OBS's 5-second countdown), with the READY/block acknowledgements of `PUSH`; 0 bytes, CRC 0 and
+  clock 0 take it away. The arc (`src/shared/sweep-spec.ts`, 32 bytes) is where the ring is, its
+  stroke width, colour, opacity and glow, and how its end moves: held at a share of a turn, or
+  `(t - zero) / turn` of the way round, stopping at none and at a whole turn or going round and
+  round. `t`, `zero` and `clock` are the PC's clock in ms since 1970; `clock` is read as the line is
+  sent, and the deck follows it from there, so the arc is sent once for as long as its motion holds.
+  The key's picture keeps the ring's track; the deck strokes the arc from the top, clockwise, with
+  round ends and its glow, and redraws it each time its end has moved a quarter of a pixel, only
+  over the rows it covers. It goes with the key's live picture as `SLIDE`'s text does, and is sent
+  and taken away in the same order. The deck refuses an arc that would reach within 2 px of the
+  key's edges. Firmware without it has the arc drawn into the key's picture, stepping once a second.
 - `PING`: desktop heartbeat every four seconds, including while hidden in the tray. A 12-second
   lapse shows Disconnected; `BYE` does so immediately on quit.
 - `BOOT decky 7`: unsolicited reset event; triggers cache restoration again.
@@ -438,8 +557,9 @@ holds. The app remembers the live pictures in each copy the deck holds (page and
   (`eofs=10..10` when right), slips corrected since boot, and the last page redraw in microseconds
   (`draw=`, about 35000). It also gives the last wheel picture composed in microseconds (`wheel=`,
   about 4300), the wheel pictures since boot (`frames=`), and a die's last picture in parts
-  (`die=<put back>/<shadow>/<faces>/<pips>`, microseconds; about 5 ms in all). `DISPLAY_RESYNC`
-  restarts scanout by hand; nothing needs it.
+  (`die=<put back>/<shadow>/<faces>/<pips>`, microseconds; about 5 ms in all), then the overlay
+  frames (sliding text, rings' arcs) drawn since boot and the last one's time in microseconds
+  (`overlays=<frames>/<us>`). `DISPLAY_RESYNC` restarts scanout by hand; nothing needs it.
 - `PAGE <index> <CRC32>`: load a cached page or stage a transfer. `cached=1` skips uploading.
   `copied=1 base=<CRC>` permits changed-key transfers from the current page.
 - `PUSH <cell> <bytes> <CRC32>`: little-endian RGB565, exactly `width × height × 2` bytes. `READY`
@@ -456,11 +576,97 @@ Touch input and desktop actions are suppressed during transitions, so a new page
 while the old artwork remains visible.
 
 The program picker searches installed Start-menu, registered and Store apps with native icons. The
-Lucide picker shows a short default set and searches the full library. Appearance, editor header and
-selected deck key share the same canvas renderer and update before saving. Icon/text spacing moves
-both as a centered group; labels use the accent color. Hover over an uploaded image to remove it.
+icon picker shows a short default set and searches the full library: Lucide's icons, and about 60
+brands' logos Lucide leaves out (Discord, OBS Studio, Twitch, Spotify, Steam, GitHub and so on;
+`src/renderer/src/components/brand-icons.ts`, from Simple Icons, CC0). A logo is drawn solid in the
+key's colour, a little smaller than an outline icon so it weighs the same. Appearance, editor header
+and selected deck key share the same canvas renderer and update before saving. Icon/text spacing
+moves both as a centered group; labels use the accent color. **Icon size** (40-200%, 100% saved as
+no setting: `iconSize`) scales a key's icon wherever it shows one - on any key without an image, and
+on a widget that draws the key's icon, such as Discord's. Hover over an uploaded image to remove it.
 The dock duplicates the selected key; drag a key onto an empty cell to move it or an occupied cell
 to swap it.
+
+## Discord
+
+Settings → **Show on Discord** (off until turned on) shows Decky on the user's Discord profile as
+**Watching Decky**: a line on what they are doing, their presses on the deck today, and for how
+long. Never a page's or a key's name. The card is the first of these that holds:
+
+| When                                       | The card                                                  |
+| ------------------------------------------ | --------------------------------------------------------- |
+| The deck's firmware or Decky installing    | Updating the deck, or Updating Decky                      |
+| OBS streaming or recording (with OBS keys) | Live, Recording or Recording paused, timed from its start |
+| A key open in the editor                   | Editing keys, timed from opening it                       |
+| The deck not connected                     | Deck disconnected                                         |
+| Otherwise                                  | At the deck, timed from connecting                        |
+
+Each but the first and fourth also says "128 presses today" (none before the first press). It is
+Decky's own Discord application, `1548005754705813654`, over Discord's local pipe
+(`\\.\pipe\discord-ipc-0` to `9`): a handshake with that public id, then `SET_ACTIVITY`. No sign-in
+and no secret; nothing leaves the PC but what Discord shows. The activity type is Watching (3):
+Discord shows one Playing activity at a time, so a Playing card would be hidden by a game, or hide
+it. A card goes at most every 4 seconds (Discord takes about five in 20 s), and only when it
+changed. Discord closed, Decky tries it again every 15 seconds. The card goes when Decky quits or
+the switch is turned off, and Settings shows it as friends see it. Its picture is the application's
+art asset `decky`, uploaded in the Developer Portal (Rich Presence → Art Assets): the logo, white on
+a near-black square. On or off and today's presses are kept in `%APPDATA%/Decky/presence.json`.
+
+Discord's keys (Apps → Discord) need its local RPC, which Discord gives an unapproved application
+only for its owner and 50 testers. So Decky asks as Discord StreamKit Overlay
+(`207646673902501888`), Discord's own overlay application, whose permission any user can give:
+Discord shows its name in the Authorize popup and under Authorized Apps. It is unofficial, and
+Discord can end it. Authorize sends `AUTHORIZE` with the scopes `rpc`, `rpc.voice.write`,
+`rpc.video.write`, `rpc.screenshare.write` and `rpc.notifications.read`; the code Discord gives goes
+to StreamKit's server (`streamkit.discord.com/overlay/token`, through Electron's network, since
+Node's own is reset by Discord on some PCs) for a token that lasts 7 days, with no refresh. The
+token is kept in `%APPDATA%/Decky/integrations/discord.json`, encrypted by Windows. A token Discord
+refuses, or one run out, makes the card ask again. One given without notifications (`AUTHENTICATE`
+names the scopes it has) leaves only the Notifications key struck through, until Authorize again.
+
+While any key uses Discord, Decky keeps a link to it, trying again every 3 seconds while it is
+closed (every 15 while it is not installed). It follows:
+
+- **Voice settings**, the moment they change (`VOICE_SETTINGS_UPDATE`): mute (`mute`), deafen
+  (`deaf`), noise suppression (`noise_suppression`), echo cancellation (`echo_cancellation`),
+  automatic gain (`automatic_gain_control`), and each device list (`input` and `output`:
+  `available_devices`, `device_id`). A tap sets one (`SET_VOICE_SETTINGS`; a switcher's, the next
+  device's `device_id`), shown at once, with Discord's own word after. `mute` stays as you left it
+  while deafened, so Mute shows `mute` or `deaf`. Just started, Discord reports its settings before
+  its media engine has listed the devices: the list then holds only a stand-in under the default
+  device's id ("No Input Devices"), and a switcher stays out of reach until the real list comes.
+  `%APPDATA%/Decky/discord.log` records how the link came and went, and the devices each time they
+  changed.
+- **Camera and screen share**, which Discord's RPC does not report: Windows' record of what Discord
+  uses (the Windows helper's `capture`: a camera or screen-capture use by a Discord program with a
+  start and no stop yet), read every second while a key has either. A tap sends `TOGGLE_VIDEO` or
+  `TOGGLE_SCREENSHARE`. Starting a share, Decky then starts Discord through its `Update.exe`, as its
+  shortcuts do: a running Discord comes to the front as it was left (a `discord://` link would go to
+  Home).
+- **Voice channels keys show**, and the call you are in while a Current call key shows it:
+  `GET_CHANNEL` for who is in each, and `SUBSCRIBE` to its voice state events. Those events do not
+  name their channel, so any of them reads the channels again (300 ms after a burst), and every 15
+  seconds besides. Avatars come from Discord's CDN, each once, as data URLs in the key's state, and
+  go once no key shows them. `VOICE_CHANNEL_SELECT` says which channel you are in; Decky then
+  follows `SPEAKING_START` and `SPEAKING_STOP` there, and no longer in the one you left. A tap sends
+  `SELECT_VOICE_CHANNEL` (`null` to leave).
+- **Notifications** (`NOTIFICATION_CREATE`, with the notifications scope): each counts on the key;
+  the last one's sender (`message.author`) and avatar (`icon_url`) show. The count, sender and
+  channel are kept in `discord.json` beside the token. A tap opens
+  `discord://-/channels/<server>/<channel>` - the server from `GET_CHANNEL`, `@me` for a direct
+  message - or, with none, brings Discord up as above. Discord sends the event only for a new
+  message that would notify, and no RPC command reads read state or mention counts (`GET_CHANNEL`
+  gives a channel's last messages, nothing on what was read).
+
+A toggle key whose action is an app's control (`{ kind: "app", app, control }`, the app's
+`controls`) never flips on a press: `AppControls` sets every such key to its app's state whenever
+the app says it changed, and sends the page shown its `STATE`. The window follows how Decky stands
+with each app keys control (`useAppsDown`: asked once, then `integration:status` events). An app out
+of reach reports no state for its controls, so their keys show OFF, and the window draws their OFF
+pictures disabled (`renderKey`'s `disabled`, with the widgets' `strike`). Only the OFF pictures: the
+deck takes ON pictures (`ALT`) whole, 29 KB each, and reloads one from its card only while its
+checksum is unchanged, so ON pictures never change with the app's reach. The page shown is sent
+again as a patch of about 2 KB for each such key, and other pages follow as they open.
 
 ## Updates
 

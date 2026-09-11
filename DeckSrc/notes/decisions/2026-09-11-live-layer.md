@@ -27,6 +27,11 @@ pictures and 0.3 s for every page. Not the problem.
 - **Result on the deck, Debug page:**
   - volume arc→bar: 0.66 s, down from 10.4 s. One 2.7 KB patch, 0.4 s of it the
     card save.
+  - Later the same day, the user still felt the deck freeze on an edit. `COMMIT`
+    held the deck 550-570 ms for its card save, whether the edit was one key or
+    a whole page. The deck now shows the page first and saves it in slices
+    between frames: `COMMIT` answers in 6 ms, and a small edit takes 66-86 ms
+    from `CACHE` to the reply.
   - loading that page whole: 22 KB, down from 311 KB.
 
 ## Critique (fresh agent, one round)

@@ -86,8 +86,9 @@ Otherwise a later restart can be blamed on an old crash.
   page's widget pictures (`LIVE` for pages not shown) and looks sent ahead
   (`WHEEL` with cell -1), counted in its progress, and `block=4096` that it
   takes uploads over USB in blocks of up to 4096 bytes once asked with
-  `BLOCK <n>` (back to 128 on `HELLO` and when the desktop goes), and `slide=1`
-  that it slides text too long for a key along by itself (`SLIDE`). `reset=`
+  `BLOCK <n>` (back to 128 on `HELLO` and when the desktop goes), `slide=1`
+  that it slides text too long for a key along by itself (`SLIDE`), and
+  `sweep=1` that it moves rings' arcs by itself (`SWEEP`). `reset=`
   names why the deck last started (`esp_reset_reason()`: `poweron`, `ext`, `sw`,
   `panic`, `intwdt`, `taskwdt`, `wdt`, `brownout`, `usb`, `jtag`). Desktops that
   don't know a flag ignore it, and a desktop facing firmware without it leaves
@@ -133,23 +134,26 @@ src/
   protocol/       CommandRouter (each line to the CommandSet that knows it),
                   Transfer (READY and acknowledged blocks), why the deck last started.
   pages/          Page (a copy of a page), PageCache (the slots, versions and memory
-                  rules), PageCommands (CACHE, PATCH, COMMIT, STATE, LIVE, SLIDE...),
-                  and the LIVE patch format.
+                  rules), PageCommands (CACHE, PATCH, COMMIT, STATE, LIVE, SLIDE,
+                  SWEEP...), and the LIVE patch format.
   display/        Screen (writes only where the scanout is not), KeyView (the keys
-                  of the page shown: animation, ON picture, live, own; text, outline).
+                  of the page shown: animation, ON picture, live, own; overlays,
+                  outline).
   input/          Touch (a finger on a key: press, move, release) and DragReport
                   (MOVE lines for keys the desktop named).
   keys/           Keys the deck animates by itself. AnimatedKeys (the 15 keys and
                   the looks kept by CRC), KeyAnimation (what each kind implements),
                   Look (what the desktop sends, one subclass a kind), KeyCommands
                   (WHEEL, WHEELAT, WHEELROLL), glyphs (text drawn from the desktop's
-                  coverage).
+                  coverage), KeyOverlay (what the deck moves over a key's picture,
+                  one subclass a kind).
     drum/         Picker wheels: countdowns, lists, the coin.
     dial/         The volume: arc and bar.
     die/          The die: its look and physics (die.cpp), drawing (die_render.cpp),
                   shape and view (die_shape.h), rotations.
     text/         SlidingText: titles too long for their key.
-  storage/        The SD card cache (artwork_store).
+    sweep/        Sweep: a ring's arc - OBS's countdown.
+  storage/        The SD card cache (artwork_store), saved a slice at a time.
   network/        Wi-Fi, discovery, pairing, and the command stream over either link.
   security/       SecureLink: AES-128-GCM frames.
   common/         KeyImage (a key's picture size), PSRAM helpers, CRC-32, the byte
@@ -165,6 +169,9 @@ Choices go through tables, not long `if`/`else` chains:
 - **A new kind of animated key** is a folder under `keys/`: a `Look` subclass
   for what the desktop sends (a row in `Look::parse`'s version table), and a
   `KeyAnimation` for how it moves and draws.
+- **A new kind of overlay** is a folder under `keys/` with a `KeyOverlay`
+  subclass, a `Kind`, a row in `page_commands.cpp`'s `OVERLAY_KINDS`, and a
+  command that reads its line into `PageCommands::overlay`.
 - **The Wi-Fi commands** (`network/wireless.cpp`) and the reset reasons
   (`protocol/identity.cpp`) are tables too.
 
@@ -183,6 +190,19 @@ Notes on what matters in each area:
     the page's own pictures.
   - Slots keep their buffers once they have one, so memory never breaks into
     pieces too small for a page (`PageCache`).
+  - A committed page is shown first, then written to the card by the main loop
+    in 8 KB slices, one per pass (`artwork_store::step`). `COMMIT` answers in
+    about 6 ms, and touches and animations keep going while the card is written,
+    about 0.7 s for a page of 15 lit keys. One save is under way at most.
+    Anything else that reads or reuses a page finishes it first, so a page's
+    pictures never change under its save. A failed save shows as `stored=0` in
+    the next `COMMIT` reply.
+- **Looks** are kept by CRC, one for every key and one more arriving to take
+  over from one of them (`AnimatedKeys::LOOKS`). A look a key is armed with is
+  never dropped for another, so every key the page turns keeps turning. Looks
+  no key uses go first, least lately armed, and also when PSRAM runs short
+  (`memory::spare`, the rule live pictures follow); with no room even then,
+  `WHEEL` answers `ERR wheel memory`.
 - **Drums** follow the finger, coast after a flick and spring onto a label, or
   roll to a label the desktop picked (a coin, yes or no, a list).
 - **Dials** take each pixel from the key at its lowest or its highest, by a
@@ -204,13 +224,25 @@ Notes on what matters in each area:
   file): with the defaults a die's frame took 10-15 ms. Animated keys belong on
   the deck rather than in the desktop, whose pictures take 20-130 ms each over
   USB.
+- **Overlays** are what the deck moves over a key's picture by itself, while
+  `LIVE` pictures change underneath: a key has at most one of each kind. Each
+  frame composes the key's rows from its picture and lays each overlay over
+  them in turn. Only the rows they cover are written, each time one has moved,
+  when the beam is clear of them (`KeyView::overlay_frames`). They ride on the
+  key's live picture and go with it: carried into a page's new version, dropped
+  with it, and dropped on `HELLO` and disconnect.
 - **Sliding text** (`keys/text`) has up to two lines, each as coverage the
   desktop drew in its font, laid in one colour over the key's picture inside its
-  window.
-  - It rests, slides, and its start comes round after a gap; the edges fade.
-  - Only the rows the text covers are written, each time it has moved a pixel,
-    when the beam is clear of them (`KeyView::text_frames`).
-  - It rides on the key's live picture and goes with it.
+  window. It rests, slides, and its start comes round after a gap; the edges
+  fade. It moves a pixel at a time.
+- **Rings' arcs** (`keys/sweep`) are stroked from the top, clockwise, with round
+  ends and a glow, antialiased from a map made when the arc arrives: each
+  pixel's angle and how much of the colour the whole ring gives it. A frame
+  compares each pixel's angle with where the end is now, and works out the round
+  ends near the two ends only. The end moves with the desktop's clock - `SWEEP`'s
+  line carries it as sent - so an arc is sent once for as long as its motion
+  holds, and redrawn each time its end has moved a quarter of a pixel. The map
+  takes memory on the terms live pictures do (`memory::spare`).
 - **Checking a change:** the firmware has no unit tests. A change that should
   not alter behaviour is checked on the deck with `tools/golden_run.py`:
   - run `record` on the build before the change;
