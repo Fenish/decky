@@ -68,3 +68,13 @@ project context.
   drops *.obj and other extensions; package-check.mjs guards the installer
 - [electron-run-as-node](electron-run-as-node.md) — shells here set
   ELECTRON_RUN_AS_NODE=1; unset it to launch Electron or the packaged app
+- [deck-first-for-animation](deck-first-for-animation.md) — animated or heavy
+  keys run on the deck; static or occasional ones are drawn by the app
+- [widgets](widgets.md) — drawn by the app, LIVE-patched onto the deck;
+  time-free base pictures, patched keys tracked per deck copy, every page warmed
+  while loading, sound and prices as events, long titles slid by the deck,
+  retired settings dropped on load
+- [usb-upload-blocks](usb-upload-blocks.md) — 2 KB acknowledged blocks after
+  BLOCK, thanks to the 8 KB receive buffer; test tools must honour READY's size
+- [deck-restart-diagnosis](deck-restart-diagnosis.md) — why the deck restarted:
+  `reset=`, deck.log, the core dump (empty means power), error 31 means replug

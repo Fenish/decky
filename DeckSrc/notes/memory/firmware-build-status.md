@@ -3,21 +3,18 @@ name: firmware-build-status
 type: goal
 ---
 
-As of 2026-09-09 the panel runs `firmware` - a PlatformIO project whose current
-behaviour is a **touch test**: fifteen numbered keys over two pages. The bottom
-right key pages forward, the bottom left pages back, and the numbers run 1 to 27
-straight through both pages so that a page actually changing is visible rather
-than inferred. Factory firmware has been erased (backup in `factory-backup/` at
-the repo root).
+As of 2026-09-11 the panel runs the full Decky firmware (protocol 7), built
+locally as `fw=0.1.4-dirty` and not yet released: pages sent by the desktop,
+widgets patched with `LIVE`, wheels, the volume dial and 3D dice drawn by the
+deck, every page warmed while loading, 2 KB upload blocks, and `reset=` in `ID`.
+Factory firmware has been erased (backup in `factory-backup/` at the repo root).
+The touch test of 2026-09-09 is long gone.
 
 Structure: `lib/panel` owns the RGB bus, timing, backlight, frame buffers, beam
-timing **and the GT911** - the only place that knows GPIO numbers.
-`lib/keygrid` owns the layout, the millimetre-to-pixel conversion and `hit()`,
-which turns a touch point back into a key index. `src/main.cpp` is the current
-screen.
-
-Image is 443 KB of the 2 MB app partition, against 769 KB for the animation
-build, and boot no longer waits on the SD card.
+timing **and the GT911** - the only place that knows GPIO numbers. `lib/keygrid`
+owns the layout, the millimetre-to-pixel conversion and `hit()`, which turns a
+touch point back into a key index. `src/main.cpp` holds the protocol and page
+cache, `src/wheel.cpp` the wheels, dials and dice.
 
 **Touch is the input.** Reversed 2026-09-09; the earlier "permanently out of
 scope" is gone. See [[touch-input]] and
