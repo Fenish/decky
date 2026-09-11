@@ -16,9 +16,12 @@ import type { CountdownWidget } from "./widgets/countdown";
 import type { CounterWidget } from "./widgets/counter";
 import type { CryptoWidget } from "./widgets/crypto";
 import type { DiceWidget } from "./widgets/dice";
+import type { Choice } from "./widgets/choice";
+import type { DiscordInbox, DiscordWidget, VoiceChannel } from "./widgets/discord";
 import type { MediaWidget } from "./widgets/media";
 import type { MicWidget } from "./widgets/mic";
 import type { NoteWidget } from "./widgets/note";
+import type { ObsState, ObsWidget } from "./widgets/obs";
 import type { PingWidget } from "./widgets/ping";
 import type { PomodoroWidget } from "./widgets/pomodoro";
 import type { SystemWidget } from "./widgets/system";
@@ -38,7 +41,10 @@ export type Widget =
     | SystemWidget
     | MicWidget
     | DiceWidget
-    | CryptoWidget;
+    | CryptoWidget
+    | ObsWidget<"obs-record">
+    | ObsWidget<"obs-stream">
+    | DiscordWidget;
 
 export type WidgetType = Widget["type"];
 
@@ -75,6 +81,16 @@ export interface WidgetState {
     change?: number;
     previous?: number;
     history?: number[];
+    /** What OBS says of the output an OBS widget shows (widgets/obs.ts). */
+    obs?: ObsState;
+    /** A touch's countdown: until when (epoch ms), and whether it will start, or stop, what the key shows. */
+    arming?: { until: number; start: boolean };
+    /** What Discord says of the voice channel, or call, a voice key shows (widgets/discord.ts). */
+    voice?: VoiceChannel;
+    /** The option a key that cycles through options shows (widgets/choice.ts): Discord's microphone. */
+    choice?: Choice;
+    /** Discord's notifications, for a notifications key. */
+    inbox?: DiscordInbox;
 }
 export type WidgetStates = Record<string, WidgetState>;
 

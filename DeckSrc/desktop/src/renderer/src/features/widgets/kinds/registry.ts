@@ -9,14 +9,15 @@ import { countdownView } from "./countdown/countdown-view";
 import { counterView } from "./counter/counter-view";
 import { cryptoView } from "./crypto/crypto-view";
 import { diceView } from "./dice/dice-view";
+import { deviceView, inboxView, voiceView } from "./discord/voice-view";
+import { levelView } from "./level/level-view";
 import { mediaView } from "./media/media-view";
-import { micView } from "./mic/mic-view";
 import { noteView } from "./note/note-view";
+import { obsView } from "./obs/obs-view";
 import { pingView } from "./ping/ping-view";
 import { pomodoroView } from "./pomodoro/pomodoro-view";
 import { systemView } from "./system/system-view";
 import { timerView } from "./timer/timer-view";
-import { volumeView } from "./volume/volume-view";
 import type { WidgetView } from "./widget-view";
 
 type WidgetViews = { [T in WidgetType]: WidgetView<Extract<Widget, { type: T }>> };
@@ -27,14 +28,21 @@ export const WIDGET_VIEWS: WidgetViews = {
     pomodoro: pomodoroView,
     countdown: countdownView,
     media: mediaView,
-    volume: volumeView,
-    mic: micView,
+    volume: levelView("speaker"),
+    mic: levelView("microphone"),
     system: systemView,
     ping: pingView,
     crypto: cryptoView,
     counter: counterView,
     dice: diceView,
     note: noteView,
+    "obs-record": obsView("record"),
+    "obs-stream": obsView("stream"),
+    "discord-channel": voiceView(),
+    "discord-call": voiceView(),
+    "discord-input": deviceView("input"),
+    "discord-output": deviceView("output"),
+    "discord-notifications": inboxView,
 };
 
 /** A widget's view. */

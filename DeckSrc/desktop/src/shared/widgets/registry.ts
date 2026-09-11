@@ -10,14 +10,23 @@ import { countdownKind } from "./countdown";
 import { counterKind } from "./counter";
 import { cryptoKind } from "./crypto";
 import { diceKind } from "./dice";
+import {
+    discordCallKind,
+    discordChannelKind,
+    discordInputKind,
+    discordNotificationsKind,
+    discordOutputKind,
+} from "./discord";
 import { mediaKind } from "./media";
 import { micKind } from "./mic";
 import { noteKind } from "./note";
+import { obsRecordKind, obsStreamKind } from "./obs";
 import { pingKind } from "./ping";
 import { pomodoroKind } from "./pomodoro";
 import { systemKind } from "./system";
 import { timerKind } from "./timer";
 import { volumeKind } from "./volume";
+import type { IntegrationId } from "../integrations/integration";
 import type { DeckTurn, WidgetKind } from "./widget-kind";
 
 type WidgetKinds = { [T in WidgetType]: WidgetKind<Extract<Widget, { type: T }>> };
@@ -37,6 +46,13 @@ export const WIDGET_KINDS: WidgetKinds = {
     counter: counterKind,
     dice: diceKind,
     note: noteKind,
+    "obs-record": obsRecordKind,
+    "obs-stream": obsStreamKind,
+    "discord-channel": discordChannelKind,
+    "discord-call": discordCallKind,
+    "discord-input": discordInputKind,
+    "discord-output": discordOutputKind,
+    "discord-notifications": discordNotificationsKind,
 };
 
 /** A widget's kind. */
@@ -66,14 +82,23 @@ function kindNamed(type: unknown): WidgetKind<Widget> | undefined {
         : undefined;
 }
 
-/** The widgets to pick from, with other words people search for them by. */
-export const WIDGET_CHOICES: { type: WidgetType; label: string; icon: string; words: string }[] =
-    Object.values(WIDGET_KINDS).map(({ type, label, icon, words }) => ({
-        type,
-        label,
-        icon,
-        words,
-    }));
+/**
+ * The widgets to pick from, with other words people search for them by, and
+ * the app they belong to, if any: its page in Apps lists them.
+ */
+export const WIDGET_CHOICES: {
+    type: WidgetType;
+    label: string;
+    icon: string;
+    words: string;
+    group?: IntegrationId;
+}[] = Object.values(WIDGET_KINDS).map(({ type, label, icon, words, group }) => ({
+    type,
+    label,
+    icon,
+    words,
+    ...(group ? { group } : {}),
+}));
 
 export function defaultWidget(type: WidgetType, now = Date.now()): Widget {
     return WIDGET_KINDS[type].defaults(now);
@@ -85,9 +110,14 @@ export function validWidget(v: unknown): v is Widget {
     return kindNamed(w.type)?.valid(w) ?? false;
 }
 
-/** Drop what a saved widget's kind no longer has (retire()). Changes `widget` in place. */
-export function retireWidget(widget: Record<string, unknown>): void {
-    kindNamed(widget.type)?.retire?.(widget);
+/**
+ * Bring a saved widget up to date (its kind's retire()), in place. False when
+ * Decky has no such widget any more.
+ */
+export function retireWidget(widget: Record<string, unknown>): boolean {
+    const kind = kindNamed(widget.type);
+    kind?.retire?.(widget);
+    return kind !== undefined;
 }
 
 /**

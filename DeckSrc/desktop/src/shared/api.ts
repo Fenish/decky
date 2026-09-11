@@ -2,6 +2,8 @@ import type { KeyLocation } from "./key-layout";
 import type { InstalledProgram } from "./programs";
 import type { DeckConfig, KeyStates } from "./config";
 import type { WidgetStates } from "./widgets";
+import type { IntegrationId, IntegrationStatus } from "./integrations/integration";
+import type { PresenceStatus } from "./presence";
 export interface DeckIdentity {
     portPath: string;
     protocol: number;
@@ -38,6 +40,8 @@ export interface DeckIdentity {
     block?: number;
     /** It slides text too long for its key along by itself (SLIDE, slide=1). */
     slide?: boolean;
+    /** It moves rings' arcs by itself (SWEEP, sweep=1). */
+    sweep?: boolean;
     /** Why it last started: poweron, sw, panic, taskwdt, brownout... */
     resetReason?: string;
 }
@@ -151,6 +155,11 @@ export type DeckEvent =
 export interface Reply {
     ok: boolean;
     message: string;
+    /**
+     * It was for the profile as it was: the profile changed meanwhile, and the
+     * window sends what it draws again - nothing to tell anyone.
+     */
+    stale?: boolean;
 }
 export interface Activity {
     at: number;
@@ -168,12 +177,22 @@ export interface PageUpload {
     toggleFrames?: { cell: number; frame: Uint8Array }[];
 }
 /**
+ * What the deck draws over a widget key by itself, by kind: text too long for
+ * the key, to slide (SLIDE payload, slide=1), and a ring's arc, to move
+ * (SWEEP payload, sweep=1). Null takes that kind away; left out, it is left
+ * as it is.
+ */
+export interface KeyOverlays {
+    slide?: Uint8Array | null;
+    sweep?: Uint8Array | null;
+}
+/**
  * What loading brings up to date besides the pages themselves: every widget
- * key's picture as it is now, with the text the deck slides on it (slide=1),
- * and the looks of the keys the deck turns, so no page opens on placeholders.
+ * key's picture as it is now, with what the deck draws over it, and the looks
+ * of the keys the deck turns, so no page opens on placeholders.
  */
 export interface Warmup {
-    widgets: { pageId: string; cell: number; frame: Uint8Array; slide?: Uint8Array | null }[];
+    widgets: { pageId: string; cell: number; frame: Uint8Array; overlays?: KeyOverlays }[];
     looks: { pageId: string; spec: Uint8Array }[];
 }
 export interface DeckApi {
@@ -181,6 +200,28 @@ export interface DeckApi {
     wifiScan(): Promise<WifiNetwork[]>;
     wifiJoin(ssid: string, password: string): Promise<Reply>;
     wifiForget(): Promise<Reply>;
+    /** How Decky stands with an app (shared/integrations); asking tries the app now. */
+    integrationStatus(id: IntegrationId): Promise<IntegrationStatus>;
+    /** Save an app's settings - a secret left null keeps the one saved, "" clears it - and try it. */
+    integrationSave(
+        id: IntegrationId,
+        values: Record<string, string | null>,
+    ): Promise<IntegrationStatus>;
+    onIntegrationStatus(handler: (status: IntegrationStatus) => void): () => void;
+    /** Start an app from where it is installed; it connects once it runs. */
+    integrationOpen(id: IntegrationId): Promise<Reply>;
+    /** Open the page to get an app from (its declaration's `download`). */
+    integrationDownload(id: IntegrationId): Promise<void>;
+    /** Ask an app's permission (Discord's Authorize); resolves once it is clicked, or not. */
+    integrationAuthorize(id: IntegrationId): Promise<Reply>;
+    /** Ask an app something by name, for a key's settings: Discord's "currentChannel". */
+    integrationCall(id: IntegrationId, name: string): Promise<unknown>;
+    /** Decky on Discord (Rich Presence): on or off, Discord there or not, and the card friends see. */
+    presenceStatus(): Promise<PresenceStatus>;
+    presenceSet(enabled: boolean): Promise<PresenceStatus>;
+    onPresenceStatus(handler: (status: PresenceStatus) => void): () => void;
+    /** A key is being edited in the app, or no longer: the card says so. */
+    presenceEditing(editing: boolean): Promise<void>;
     cachePages(pages: PageUpload[], warmup?: Warmup): Promise<Reply>;
     moveKey(from: KeyLocation, to: KeyLocation): Promise<DeckConfig>;
     duplicateKey(from: KeyLocation): Promise<{ config: DeckConfig; cell: number }>;
@@ -213,14 +254,13 @@ export interface DeckApi {
     onWidgetStates(handler: (states: WidgetStates) => void): () => void;
     /**
      * Show a widget key's new picture on the deck, as a patch where it can,
-     * and where the deck slides text along (slide=1) the text it slides on
-     * it: a SLIDE payload, or null for none. Undefined leaves that alone.
+     * with what the deck draws over it by itself where it does (KeyOverlays).
      */
     liveKey(
         pageId: string,
         cell: number,
         frame: Uint8Array,
-        slide?: Uint8Array | null,
+        overlays?: KeyOverlays,
     ): Promise<Reply>;
     /**
      * Hand an adjustable countdown at rest to the deck to draw and turn: its
@@ -239,6 +279,8 @@ export interface DeckApi {
     runKey(pageId: string, cell: number): Promise<Reply>;
     cancel(): Promise<void>;
     navigate(pageId: string): Promise<DeckConfig>;
+    /** A page's Back: the page it was opened from, else its parent. */
+    back(pageId: string): Promise<DeckConfig>;
     exportConfig(): Promise<Reply>;
     importConfig(): Promise<DeckConfig | null>;
     syncPage(

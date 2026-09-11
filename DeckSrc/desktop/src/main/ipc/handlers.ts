@@ -4,13 +4,17 @@
  * arrive as the renderer sent them and are checked where they are used.
  *--------------------------------------------------------------*/
 
-import { dialog } from "electron";
+import { dialog, shell } from "electron";
 import { validateConfig } from "../../shared/config";
 import type { KeyStateStore } from "../actions/key-state";
 import type { ActionRunner } from "../actions/runner";
 import type { MainWindow } from "../app/main-window";
 import type { DeckSession } from "../deck/session";
 import type { WifiSetup } from "../deck/wifi-setup";
+import type { RichPresence } from "../discord/presence";
+import { INTEGRATIONS, integrationNamed } from "../../shared/integrations/registry";
+import type { IntegrationId } from "../../shared/integrations/integration";
+import type { IntegrationService, IntegrationServices } from "../integrations/integration";
 import type { PageSync } from "../pages/page-sync";
 import type { Profile } from "../profile/profile";
 import type { Workspace } from "../profile/workspace";
@@ -45,11 +49,13 @@ export interface HandlerParts {
     keyStates: KeyStateStore;
     widgetStore: WidgetStore;
     runner: ActionRunner;
+    integrations: IntegrationServices;
+    presence: RichPresence;
 }
 
 export function registerHandlers(parts: HandlerParts): void {
     const { window, session, wifi, updates, profile, workspace, pageSync } = parts;
-    const { live, wheels, keyStates, widgetStore, runner } = parts;
+    const { live, wheels, keyStates, widgetStore, runner, integrations, presence } = parts;
     const handle = trustedHandle(window);
 
     // The deck: its status, pages and widget keys.
@@ -58,7 +64,9 @@ export function registerHandlers(parts: HandlerParts): void {
         pageSync.syncPage(pageId, frames, toggleFrames),
     );
     handle("pages:cache", (pages, warmup) => pageSync.cachePages(pages, warmup));
-    handle("deck:live", (pageId, cell, frame, slide) => live.queue(pageId, cell, frame, slide));
+    handle("deck:live", (pageId, cell, frame, overlays) =>
+        live.queue(pageId, cell, frame, overlays),
+    );
     handle("deck:wheel", (pageId, cell, spec, values, index) =>
         wheels.queue(pageId, cell, spec, values, index),
     );
@@ -72,6 +80,7 @@ export function registerHandlers(parts: HandlerParts): void {
     handle("config:export", () => workspace.exportProfile());
     handle("config:import", () => workspace.importProfile());
     handle("page:navigate", (pageId) => workspace.navigate(pageId));
+    handle("page:back", (pageId) => workspace.back(pageId));
     handle("keys:move", (source, target) => workspace.move(source, target));
     handle("keys:duplicate", (source) => workspace.duplicate(source));
     handle("keys:states", () => keyStates.snapshot());
@@ -98,6 +107,33 @@ export function registerHandlers(parts: HandlerParts): void {
     handle("wifi:scan", () => wifi.scan());
     handle("wifi:join", (ssid, password) => wifi.join(ssid, password));
     handle("wifi:forget", () => wifi.forget());
+
+    // Apps Decky talks to (integrations): how it stands with each, its settings,
+    // starting it, and where to get it (its declaration's own https page).
+    const app = (id: unknown): IntegrationService => {
+        if (!integrationNamed(id)) throw new Error("Unknown app.");
+        return integrations[id as IntegrationId];
+    };
+    handle("integration:status", (id) => app(id).check());
+    handle("integration:save", (id, values) => app(id).save(values));
+    handle("integration:open", (id) => app(id).open());
+    handle("integration:download", (id) => shell.openExternal(INTEGRATIONS[app(id).id].download));
+    handle("integration:authorize", async (id) => {
+        const service = app(id);
+        if (!service.authorize) throw new Error("That app asks for no permission.");
+        return service.authorize();
+    });
+    handle("integration:call", async (id, name) => {
+        const service = app(id);
+        if (!service.call || typeof name !== "string")
+            throw new Error("That app has nothing to ask.");
+        return service.call(name);
+    });
+
+    // Decky on Discord: on or off, and a key being edited in the app.
+    handle("presence:status", () => presence.status());
+    handle("presence:set", (enabled) => presence.setEnabled(enabled));
+    handle("presence:editing", (editing) => presence.setEditing(editing));
 
     // Updates to the firmware and to Decky.
     handle("firmware:info", () => updates.firmwareInfo());

@@ -118,6 +118,11 @@ public static class DeckyAudio {
 }
 "@
 
+# A device's level (0-100) and mute: the speaker (flow 0) or microphone (1).
+function Sound([int]$flow) {
+    @{ level = [math]::Round([DeckyAudio]::Level($flow) * 100); muted = [DeckyAudio]::Muted($flow) }
+}
+
 # What is playing: Windows' media sessions, through WinRT.
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $methods = [System.WindowsRuntimeSystemExtensions].GetMethods()
@@ -180,6 +185,20 @@ function Media {
     }
 }
 
+# Whether a program whose path matches `$who` uses a capability now - the
+# camera ("webcam"), screen capture - as Windows records it: a use still going
+# has a start and no stop yet.
+function InUse([string]$capability, [string]$who) {
+    $store = "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\$capability\NonPackaged"
+    if (-not (Test-Path $store)) { return $false }
+    foreach ($key in Get-ChildItem $store) {
+        if ($key.PSChildName -notmatch $who) { continue }
+        $use = Get-ItemProperty $key.PSPath
+        if ($use.LastUsedTimeStart -and -not $use.LastUsedTimeStop) { return $true }
+    }
+    return $false
+}
+
 while ($true) {
     $line = [Console]::In.ReadLine()
     if ($null -eq $line) { break }
@@ -187,21 +206,28 @@ while ($true) {
     try {
         switch ($request.op) {
             "audio" {
-                $result = @{ level = [math]::Round([DeckyAudio]::Level(0) * 100); muted = [DeckyAudio]::Muted(0); mic = $null }
-                try { $result.mic = @{ muted = [DeckyAudio]::Muted(1) } } catch { }
+                $result = @{ speaker = Sound 0; microphone = $null }
+                try { $result.microphone = Sound 1 } catch { }
             }
-            "volume" {
-                [DeckyAudio]::SetLevel(0, [float]([double]$request.level / 100))
-                # As Windows' own slider does: turning it up unmutes.
-                if ([double]$request.level -gt 0 -and [DeckyAudio]::Muted(0)) { [DeckyAudio]::SetMuted(0, $false) }
+            # A device's level, 0-100; with `unmute`, turning it up unmutes it,
+            # as Windows' own slider does.
+            "level" {
+                $flow = [int]$request.flow
+                [DeckyAudio]::SetLevel($flow, [float]([double]$request.level / 100))
+                if ($request.unmute -and [double]$request.level -gt 0 -and [DeckyAudio]::Muted($flow)) { [DeckyAudio]::SetMuted($flow, $false) }
                 $result = @{}
             }
             "watch-audio" { [DeckyAudio]::Watch(); $result = @{} }
-            "mute" { [DeckyAudio]::SetMuted(0, [bool]$request.muted); $result = @{} }
-            "micmute" { [DeckyAudio]::SetMuted(1, [bool]$request.muted); $result = @{} }
+            "mute" { [DeckyAudio]::SetMuted([int]$request.flow, [bool]$request.muted); $result = @{} }
             "media" { $result = Media }
             "media-toggle" { $s = Session; if ($s) { $null = Await ($s.TryTogglePlayPauseAsync()) ([bool]) }; $result = @{} }
             "media-next" { $s = Session; if ($s) { $null = Await ($s.TrySkipNextAsync()) ([bool]) }; $result = @{} }
+            "media-previous" { $s = Session; if ($s) { $null = Await ($s.TrySkipPreviousAsync()) ([bool]) }; $result = @{} }
+            # Discord's camera and screen share: Discord's RPC does not say.
+            "capture" {
+                $screen = (InUse "graphicsCaptureProgrammatic" "(?i)discord") -or (InUse "graphicsCaptureWithoutBorder" "(?i)discord")
+                $result = @{ camera = (InUse "webcam" "(?i)discord"); screen = $screen }
+            }
             default { throw "Unknown request: $($request.op)" }
         }
         $answer = @{ id = $request.id; ok = $true; result = $result }

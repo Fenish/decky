@@ -28,6 +28,8 @@ export class WindowsHost {
     >();
     /** Counts the helper's starts: what it was asked to do, a new one has not been. */
     run = 0;
+    // Who needs the helper kept running between requests: it stops when none does.
+    private readonly holders = new Set<string>();
 
     constructor(private readonly folder: string) {}
 
@@ -109,6 +111,16 @@ export class WindowsHost {
             this.waiting.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
             this.child!.stdin.write(`${JSON.stringify({ id, op, ...fields })}\n`);
         });
+    }
+
+    /**
+     * Whether `who` (sound and media readings, Discord) needs the helper now:
+     * it goes once none does, and starts again on the next request.
+     */
+    hold(who: string, needed: boolean): void {
+        if (needed) return void this.holders.add(who);
+        this.holders.delete(who);
+        if (!this.holders.size) this.stop();
     }
 
     stop(): void {

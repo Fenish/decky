@@ -1,17 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, ChevronLeft, Play, Plus, Trash2, X } from "lucide-react";
 import type { Action, DeckPage, KeyConfig, Step } from "../../../../shared/config";
 import { appearanceOf } from "../../../../shared/config";
 import { ArtworkPreview } from "../artwork/artwork-preview";
+import { widgetLook } from "../widgets/draw-widget";
+import { viewOf } from "../widgets/kinds/registry";
 import { WidgetPreview } from "../widgets/widget-preview";
 import { WidgetSettings } from "../widgets/widget-settings";
+import { INTEGRATIONS } from "../../../../shared/integrations/registry";
 import { defaultWidget, WIDGET_CHOICES } from "../../../../shared/widgets/registry";
 import type { WidgetState } from "../../../../shared/widgets";
 import { AppearanceEditor } from "../artwork/appearance-editor";
-import { ActionPicker, ACTION_CHOICES } from "./action-picker";
+import { AppCard } from "../integrations/app-card";
+import { ActionPicker, ACTION_CHOICES, panelName } from "./action-picker";
 import type { PickerPanel } from "./action-picker";
-import { ACTION_KINDS, defaultAction } from "./actions";
+import { ACTION_KINDS, defaultAction, stateNames } from "./actions";
 import { MacroEditor } from "./macro-editor";
 import { StepFields } from "./step-fields";
 export type EditorTab = "action" | "appearance";
@@ -70,18 +74,60 @@ const ACTION_PANELS: {
             </button>
         </div>
     ),
+    // Which of the app's controls, and how Decky stands with the app.
+    app: ({ value, action }) => {
+        const integration = INTEGRATIONS[value.action.app];
+        const states = stateNames(value.action);
+        return (
+            <div className="widget-settings">
+                <label className="field">
+                    Control
+                    <select
+                        aria-label={`${integration.name} control`}
+                        value={value.action.control}
+                        onChange={(e) => action({ ...value.action, control: e.target.value })}
+                    >
+                        {Object.entries(integration.controls ?? {}).map(([name, control]) => (
+                            <option key={name} value={name}>
+                                {control.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <AppCard id={value.action.app} />
+                <p className="widget-hint">
+                    As a toggle, it shows {states.on} or {states.off} as {integration.name} is,
+                    however it was switched.
+                </p>
+            </div>
+        );
+    },
     widget: ({ value, action }) => (
         <WidgetSettings
             widget={value.action.widget}
-            look={{
-                background: value.background ?? "#000000",
-                color: value.color,
-                label: value.label,
-            }}
+            look={widgetLook(value)}
             onChange={(widget) => action({ kind: "widget", widget })}
         />
     ),
 };
+/** A widget's own part of the Appearance tab: its icon, if it draws one, and its looks. */
+function widgetAppearance(
+    value: KeyConfig,
+    action: (next: Action) => void,
+): { widgetIcon?: boolean; widgetOptions?: ReactNode } {
+    if (value.action.kind !== "widget") return {};
+    const { widget } = value.action;
+    const view = viewOf(widget);
+    return {
+        widgetIcon: view.icon === true,
+        widgetOptions: view.appearance?.({
+            widget,
+            look: widgetLook(value),
+            onChange: (next) => action({ kind: "widget", widget: next }),
+            zones: [],
+        }),
+    };
+}
 /** The settings for the key's action, by its kind. */
 function actionPanel(props: PanelProps<Action>): ReactNode {
     const panel = ACTION_PANELS[props.value.action.kind] as (
@@ -133,6 +179,11 @@ export function KeyEditor({
     widgetState,
 }: EditorProps) {
     const [saving, setSaving] = useState(false);
+    // While a key is open here, Decky's card on Discord says it is being edited.
+    useEffect(() => {
+        void window.deck.presenceEditing(true).catch(() => {});
+        return () => void window.deck.presenceEditing(false).catch(() => {});
+    }, []);
     const [panel, setPanel] = useState<PickerPanel>("actions");
     // The picker panel an unsaved new key was chosen in: Back returns there.
     const [pickedIn, setPickedIn] = useState<PickerPanel | null>(null);
@@ -168,8 +219,8 @@ export function KeyEditor({
                 {back && (
                     <button
                         className="editor-back"
-                        aria-label={back === "widgets" ? "Back to widgets" : "Back to actions"}
-                        title={back === "widgets" ? "Back to widgets" : "Back to actions"}
+                        aria-label={`Back to ${panelName(back)}`}
+                        title={`Back to ${panelName(back)}`}
                         onClick={() => {
                             setPanel(back);
                             setPickedIn(null);
@@ -183,11 +234,7 @@ export function KeyEditor({
                     {value?.action.kind === "widget" ? (
                         <WidgetPreview
                             widget={value.action.widget}
-                            look={{
-                                background: value.background ?? "#000000",
-                                color: value.color,
-                                label: value.label,
-                            }}
+                            look={widgetLook(value)}
                             state={widgetState}
                         />
                     ) : (
@@ -236,9 +283,23 @@ export function KeyEditor({
                             ),
                         });
                     }}
+                    onControl={(app, control) => {
+                        const choice = INTEGRATIONS[app].controls![control]!;
+                        setPickedIn(app);
+                        // A toggle: OFF as the app is at rest, ON as the control declares.
+                        onChange({
+                            label: choice.label,
+                            icon: choice.icon,
+                            color: "#eee8da",
+                            behavior: "toggle",
+                            activeAppearance: { ...choice.on },
+                            action: { kind: "app", app, control },
+                        });
+                    }}
                     onWidget={(type) => {
                         const choice = WIDGET_CHOICES.find((c) => c.type === type)!;
-                        setPickedIn("widgets");
+                        // An app's widget was picked on its page; any other on Widgets.
+                        setPickedIn(choice.group ?? "widgets");
                         onChange({
                             label: "",
                             icon: choice.icon,
@@ -322,6 +383,9 @@ export function KeyEditor({
                                         </option>
                                     ))}
                                     <option value="widget">{ACTION_KINDS.widget.label}</option>
+                                    {value.action.kind === "app" && (
+                                        <option value="app">{ACTION_KINDS.app.label}</option>
+                                    )}
                                 </select>
                                 {actionPanel({
                                     value,
@@ -340,25 +404,24 @@ export function KeyEditor({
                                         role="group"
                                         aria-label="Edit toggle appearance"
                                     >
-                                        <button
-                                            aria-label="OFF appearance"
-                                            className={appearanceState === "off" ? "active" : ""}
-                                            onClick={() => setAppearanceState("off")}
-                                        >
-                                            OFF
-                                        </button>
-                                        <button
-                                            aria-label="ON appearance"
-                                            className={appearanceState === "on" ? "active" : ""}
-                                            onClick={() => setAppearanceState("on")}
-                                        >
-                                            ON
-                                        </button>
+                                        {(["off", "on"] as const).map((state) => (
+                                            <button
+                                                key={state}
+                                                aria-label={`${stateNames(value.action)[state]} appearance`}
+                                                className={
+                                                    appearanceState === state ? "active" : ""
+                                                }
+                                                onClick={() => setAppearanceState(state)}
+                                            >
+                                                {stateNames(value.action)[state]}
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                                 <AppearanceEditor
                                     showLabel={value.behavior === "toggle"}
                                     widget={value.action.kind === "widget"}
+                                    {...widgetAppearance(value, action)}
                                     value={appearanceOf(value, appearanceState === "on")}
                                     onError={onError}
                                     change={(appearance) =>

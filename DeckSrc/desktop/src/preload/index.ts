@@ -20,6 +20,17 @@ const api: DeckApi = {
     wifiScan: () => ipcRenderer.invoke("wifi:scan"),
     wifiJoin: (ssid, password) => ipcRenderer.invoke("wifi:join", ssid, password),
     wifiForget: () => ipcRenderer.invoke("wifi:forget"),
+    integrationStatus: (id) => ipcRenderer.invoke("integration:status", id),
+    integrationSave: (id, values) => ipcRenderer.invoke("integration:save", id, values),
+    onIntegrationStatus: (handler) => listen("integration:status", handler),
+    integrationOpen: (id) => ipcRenderer.invoke("integration:open", id),
+    integrationDownload: (id) => ipcRenderer.invoke("integration:download", id),
+    integrationAuthorize: (id) => ipcRenderer.invoke("integration:authorize", id),
+    integrationCall: (id, name) => ipcRenderer.invoke("integration:call", id, name),
+    presenceStatus: () => ipcRenderer.invoke("presence:status"),
+    presenceSet: (enabled) => ipcRenderer.invoke("presence:set", enabled),
+    onPresenceStatus: (handler) => listen("presence:status", handler),
+    presenceEditing: (editing) => ipcRenderer.invoke("presence:editing", editing),
     cachePages: (pages, warmup) => ipcRenderer.invoke("pages:cache", pages, warmup),
     moveKey: (from, to) => ipcRenderer.invoke("keys:move", from, to),
     duplicateKey: (from) => ipcRenderer.invoke("keys:duplicate", from),
@@ -33,8 +44,8 @@ const api: DeckApi = {
     onKeyStates: (handler) => listen("keys:states", handler),
     widgetStates: () => ipcRenderer.invoke("widgets:states"),
     onWidgetStates: (handler) => listen("widgets:states", handler),
-    liveKey: (page, cell, frame, slide) =>
-        ipcRenderer.invoke("deck:live", page, cell, frame, slide),
+    liveKey: (page, cell, frame, overlays) =>
+        ipcRenderer.invoke("deck:live", page, cell, frame, overlays),
     wheelKey: (page, cell, spec, values, index) =>
         ipcRenderer.invoke("deck:wheel", page, cell, spec, values, index),
     getConfig: () => ipcRenderer.invoke("config:get"),
@@ -43,6 +54,7 @@ const api: DeckApi = {
     runKey: (page, cell) => ipcRenderer.invoke("action:run", page, cell),
     cancel: () => ipcRenderer.invoke("action:cancel"),
     navigate: (page) => ipcRenderer.invoke("page:navigate", page),
+    back: (page) => ipcRenderer.invoke("page:back", page),
     exportConfig: () => ipcRenderer.invoke("config:export"),
     importConfig: () => ipcRenderer.invoke("config:import"),
     syncPage: (pageId, frames, toggleFrames) =>
