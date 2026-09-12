@@ -73,6 +73,21 @@ void Deck::loop() {
         session_.updating_until && static_cast<int32_t>(session_.updating_until - millis()) > 0;
     if (session_.online && !updating && millis() - session_.last_heard_ms > Session::HOST_TIMEOUT_MS) disconnected();
     touch_.poll(*this);
+    if (game_.running()) {
+        game_.tick(millis());
+        // What it has eaten, when that changes: the window keeps the score.
+        if (game_.score() != game_score_) {
+            game_score_ = game_.score();
+            wireless::events().printf("EV GAME SCORE %d\n", game_score_);
+        }
+        vTaskDelay(1);
+        return;
+    }
+    if (game_.finished()) {
+        game_.taken();
+        wireless::events().printf("EV GAME OVER %d\n", game_.score());
+        if (pages_.active) view_.draw_page();
+    }
     animation_frames();
     view_.overlay_frames();
     artwork_store::step();
@@ -112,10 +127,24 @@ void Deck::disconnected() {
     // Overlays and live pictures are the session's: the next desktop sends
     // what it wants, over the pages' own pictures.
     pages_.drop_lives();
+    // Nobody is left to score it, and it would draw over the notice.
+    game_.stop();
     status_.show(-1, "Disconnected");
 }
 
-bool Deck::accepting_presses() { return session_.online && !status_.shown() && !session_.transitioning; }
+bool Deck::accepting_presses() {
+    // While the game has the panel, a finger is the game's alone.
+    return session_.online && !status_.shown() && !session_.transitioning && !game_.running();
+}
+
+void Deck::touched(int x, int y, bool down, uint32_t now) {
+    if (game_.running()) game_.touched(x, y, down, now);
+}
+
+void Deck::start_game() {
+    session_.transitioning = false;
+    game_.start(millis());
+}
 
 void Deck::pressed(int cell, int y, uint32_t now) {
     pressed_page_ = session_.current_page;

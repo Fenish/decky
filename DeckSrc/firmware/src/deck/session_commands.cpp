@@ -25,6 +25,7 @@ bool SessionCommands::run(const char *name, const char *line) {
         {"UPDATING", &SessionCommands::updating},
         {"BLOCK", &SessionCommands::block},
         {"DRAG", &SessionCommands::drag},
+        {"GAME", &SessionCommands::game},
         {"SDINFO", &SessionCommands::storage},
         {"SCREEN", &SessionCommands::screen},
         {"DISPLAY_STATE", &SessionCommands::display_state},
@@ -44,7 +45,7 @@ bool SessionCommands::identify(const char *line) {
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     reply().printf(
         "OK id decky %d %02x%02x%02x%02x%02x%02x cells=%d cols=%d rows=%d w=%d h=%d pages=%d cache=%d storage=%d fw=%s "
-        "live=1 drag=1 wheel=1 dial=1 warm=1 block=%u slide=1 sweep=1 reset=%s\n",
+        "live=1 drag=1 wheel=1 dial=1 warm=1 block=%u slide=1 sweep=1 game=1 reset=%s\n",
         DECKY_PROTOCOL, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], keygrid::COUNT, keygrid::COLS, keygrid::ROWS,
         KeyImage::width(), KeyImage::height(), PageCache::MAX_PAGES, PageCache::CACHE_SLOTS,
         artwork_store::available() ? 1 : 0, DECKY_FW_VERSION, static_cast<unsigned>(Transfer::SERIAL_BLOCK_MAX),
@@ -138,6 +139,25 @@ bool SessionCommands::drag(const char *line) {
     if (sscanf(line, "DRAG %u %c", &mask, &extra) != 1) return false;
     deck_.drag().set(mask);
     reply().println("OK drag");
+    return true;
+}
+
+// GAME snake takes the panel for the easter egg; GAME off hands it back. The
+// deck says when the game ends of its own accord (EV GAME OVER <score>).
+bool SessionCommands::game(const char *line) {
+    char what[8] = {0};
+    char extra = 0;
+    if (sscanf(line, "GAME %7s %c", what, &extra) != 1) return false;
+    if (strcmp(what, "snake") == 0) {
+        deck_.start_game();
+        reply().println("OK game");
+        return true;
+    }
+    if (strcmp(what, "off") != 0) return false;
+    const bool was = deck_.game().running();
+    deck_.game().stop();
+    if (was && deck_.pages().active) deck_.view().draw_page();
+    reply().println("OK game");
     return true;
 }
 

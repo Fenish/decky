@@ -82,6 +82,7 @@ export function parseIdentity(line: string, path: string): DeckIdentity | null {
         block: fields.get("block"),
         slide: fields.get("slide") === 1,
         sweep: fields.get("sweep") === 1,
+        game: fields.get("game") === 1,
         // Reported from protocol 7 on; older firmware has no version to show.
         firmwareVersion: parts
             .slice(5)
@@ -119,6 +120,15 @@ const EVENT_LINES = new Map<string, (parts: string[], line: string) => DeckEvent
     [
         "EV",
         (parts) => {
+            // The easter egg says how it is going, and how it went.
+            if (parts[1] === "GAME") {
+                const score = Number(parts[3]);
+                if (!Number.isInteger(score) || score < 0) return null;
+                if (parts[2] === "OVER") return { kind: "game", over: true, score, at: Date.now() };
+                if (parts[2] === "SCORE")
+                    return { kind: "game", over: false, score, at: Date.now() };
+                return null;
+            }
             if (parts.length < 4) return null;
             const page = Number(parts[1]);
             const cell = Number(parts[2]);

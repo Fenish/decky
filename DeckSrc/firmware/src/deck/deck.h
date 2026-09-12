@@ -4,6 +4,7 @@
 #include "deck/session_commands.h"
 #include "deck/status_screen.h"
 #include "display/key_view.h"
+#include "game/snake.h"
 #include "display/screen.h"
 #include "input/drag.h"
 #include "input/touch.h"
@@ -22,6 +23,7 @@
 //   keys/      keys it animates itself (drums, dials, dice, sliding text)
 //   display/   drawing keys onto the screen without tearing
 //   input/     the finger: presses, holds, drags
+//   game/      snake, when someone finds it
 //   protocol/  commands in, uploads, the identity reply
 //   deck/      this, the session, the status screen and session commands
 class Deck : public KeyListener, public TransferIdle {
@@ -44,6 +46,7 @@ public:
     StatusScreen &status() { return status_; }
     Transfer &transfer() { return transfer_; }
     Touch &touch() { return touch_; }
+    game::Snake &game() { return game_; }
     DragReport &drag() { return drag_; }
 
     // Show `page` from now on, its toggles off, loading over (drawing is the
@@ -55,8 +58,20 @@ public:
     // the session goes, and the deck says Disconnected.
     void disconnected();
 
+    /** The easter egg takes the panel; the page comes back when it ends. */
+    void start_game();
+
+    // Whether a key drawn now would be seen: nothing else has the panel. A
+    // command that arrives while something does (loading, a page change, the
+    // game) still takes what it was sent - it just draws nothing, and the page
+    // is drawn whole when the panel comes back.
+    bool panel_free() const {
+        return !status_.shown() && !session_.transitioning && !game_.running();
+    }
+
     // KeyListener
     bool accepting_presses() override;
+    void touched(int x, int y, bool down, uint32_t now) override;
     void pressed(int cell, int y, uint32_t now) override;
     void moved(int cell, int y, uint32_t now) override;
     void released(int cell, uint32_t now) override;
@@ -78,6 +93,8 @@ private:
     PageCache pages_;
     keys::AnimatedKeys animations_;
     KeyView view_;
+    game::Snake game_{screen_};
+    int game_score_ = 0;
     Touch touch_;
     DragReport drag_;
     Transfer transfer_;

@@ -102,7 +102,7 @@ bool KeyCommands::upload(const char *line) {
         reply().println("ERR wheel index");
         return true;
     }
-    if (!deck_.status().shown() && !session.transitioning) deck_.view().draw_key(cell, false);
+    if (deck_.panel_free()) deck_.view().draw_key(cell, false);
     reply().println("OK wheel");
     return true;
 }
@@ -129,7 +129,7 @@ bool KeyCommands::arm(const char *line) {
         reply().println("ERR wheel index");
         return true;
     }
-    if (!deck_.status().shown() && !deck_.session().transitioning) deck_.view().draw_key(cell, false);
+    if (deck_.panel_free()) deck_.view().draw_key(cell, false);
     reply().println("OK wheel");
     return true;
 }

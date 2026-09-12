@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { TitleBar } from "../components/title-bar";
 import { DisconnectedScreen } from "../features/connection/disconnected-screen";
 import { Dashboard, type DashboardHandle } from "../features/dashboard/dashboard";
+import { SnakeScreen } from "../features/game/snake-screen";
 import { AppUpdateScreen } from "../features/updates/app-update-screen";
 import { useFirmwareWatch } from "../features/firmware/use-firmware-watch";
 import { useUpdates } from "../features/updates/use-updates";
@@ -40,6 +41,12 @@ export function App() {
                     onEntered={deck.enteredDashboard}
                     reducedMotion={deck.config.reducedMotion}
                     unknownDevices={!deck.status.connected ? deck.status.unknownDevices : undefined}
+                />
+            )}
+            {deck.playing !== null && (
+                <SnakeScreen
+                    score={deck.playing}
+                    onStop={() => void window.deck.stopGame().catch(() => {})}
                 />
             )}
             {deck.everConnected && (

@@ -42,6 +42,8 @@ export interface DeckIdentity {
     slide?: boolean;
     /** It moves rings' arcs by itself (SWEEP, sweep=1). */
     sweep?: boolean;
+    /** It has the easter egg (GAME, game=1). */
+    game?: boolean;
     /** Why it last started: poweron, sw, panic, taskwdt, brownout... */
     resetReason?: string;
 }
@@ -151,7 +153,9 @@ export type DeckEvent =
     /** USB was lost and the connection continued over Wi-Fi. */
     | { kind: "fallback"; at: number }
     /** A USB-serial device was plugged in: worth a status check now. */
-    | { kind: "ports"; at: number };
+    | { kind: "ports"; at: number }
+    /** The easter egg: what it has eaten, and that it is over (game.ts). */
+    | { kind: "game"; over: boolean; score: number; at: number };
 export interface Reply {
     ok: boolean;
     message: string;
@@ -277,6 +281,8 @@ export interface DeckApi {
     /** Whether Decky starts with Windows, and whether this Decky can. */
     autoStart(): Promise<AutoStart>;
     setAutoStart(on: boolean): Promise<AutoStart>;
+    /** Give the deck back: the easter egg ends and the page returns. */
+    stopGame(): Promise<Reply>;
     saveConfig(config: DeckConfig): Promise<DeckConfig>;
     pickTarget(kind: "program" | "script"): Promise<string | null>;
     runKey(pageId: string, cell: number): Promise<Reply>;

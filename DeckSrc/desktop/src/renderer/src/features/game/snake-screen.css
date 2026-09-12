@@ -1,0 +1,62 @@
+/* Over the dashboard while the deck is playing: the deck has the game, this
+   has the score. */
+.snake-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    background: #05050699;
+    backdrop-filter: blur(14px);
+}
+.snake-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 38px 46px 32px;
+    border: 1px solid #dfd2b38a;
+    border-top-color: #efe6d1c2;
+    border-radius: 24px;
+    background: linear-gradient(145deg, #24231d70, #090909ee 35%, #19181390);
+    box-shadow:
+        0 18px 45px #0007,
+        inset 0 1px 0 #fff8df12;
+    text-align: center;
+}
+.snake-icon {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    background: #ece0c314;
+    color: #f0e3c4;
+}
+.snake-card h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 550;
+    color: #f3efe6;
+}
+.snake-score {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    color: #b6ab92;
+    font-size: 13px;
+}
+.snake-score > strong {
+    font-size: 40px;
+    font-weight: 600;
+    color: #ffe9b8;
+    font-variant-numeric: tabular-nums;
+}
+.snake-help {
+    max-width: 34ch;
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #8d8168;
+}

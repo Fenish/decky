@@ -361,10 +361,15 @@ bool PageCommands::state(const char *line) {
     session.warming = false;
     deck_.status().hide();
     session.transitioning = false;
-    if (full) deck_.view().draw_page();
-    else
-        for (int cell = 0; cell < keygrid::COUNT; ++cell)
-            if (changed & (1 << cell)) deck_.view().draw_key(cell, cell == deck_.touch().pressed_cell());
+    // Nothing is drawn while something else has the panel (the game): the
+    // state is kept, and the page is drawn whole when it comes back.
+    if (deck_.panel_free()) {
+        if (full) deck_.view().draw_page();
+        else
+            for (int cell = 0; cell < keygrid::COUNT; ++cell)
+                if (changed & (1 << cell))
+                    deck_.view().draw_key(cell, cell == deck_.touch().pressed_cell());
+    }
     reply().printf("OK state %d mask=%u cells=%d\n", id, mask, full ? keygrid::COUNT : __builtin_popcount(changed));
     return true;
 }
@@ -389,7 +394,7 @@ bool PageCommands::live(const char *line) {
         reply().println("ERR invalid live patch");
         return true;
     }
-    const bool shown = page == pages.active && !deck_.status().shown() && !session.transitioning;
+    const bool shown = page == pages.active && deck_.panel_free();
     if (!bytes) {
         page->drop_live(cell);
         page->used = millis();
@@ -450,7 +455,7 @@ bool PageCommands::live(const char *line) {
     }
     page->used = millis();
     session.heard(millis());
-    if (page == pages.active && !deck_.status().shown() && !session.transitioning)
+    if (page == pages.active && deck_.panel_free())
         deck_.view().draw_key(cell, cell == deck_.touch().pressed_cell());
     reply().println("OK live");
     return true;
@@ -519,7 +524,7 @@ void PageCommands::overlay(KeyOverlay::Kind kind, int id, uint32_t signature, in
     page->set_overlay(cell, kind, overlay);
     page->used = millis();
     session.heard(millis());
-    if (page == pages.active && !deck_.status().shown() && !session.transitioning)
+    if (page == pages.active && deck_.panel_free())
         deck_.view().draw_key(cell, cell == deck_.touch().pressed_cell());
     answer("OK %s");
 }

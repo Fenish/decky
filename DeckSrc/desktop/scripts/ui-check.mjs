@@ -303,6 +303,7 @@ try {
             // An installed Decky starts with Windows; this one is not installed.
             autoStart: async () => window.__autoStart,
             setAutoStart: async (on) => (window.__autoStart = { on, available: true }),
+            stopGame: async () => ({ ok: true }),
             getConfig: async () => config,
             getKeyStates: async () => states,
             onKeyStates: (fn) => listen(stateListeners, fn),
@@ -1437,9 +1438,27 @@ try {
         "output/home-page.rgb565",
         Buffer.from((await page.evaluate(() => window.__hardwareFrames)).flat()),
     );
+    // The easter egg: while the deck plays snake the window keeps the score,
+    // and the button hands the keys back.
+    await page.evaluate(() =>
+        window.__deviceEvent({ kind: "game", over: false, score: 0, at: Date.now() }),
+    );
+    const snake = page.getByRole("main", { name: "Playing snake on the deck", exact: true });
+    await expect(snake).toBeVisible();
+    await page.evaluate(() =>
+        window.__deviceEvent({ kind: "game", over: false, score: 4, at: Date.now() }),
+    );
+    await expect(snake.getByText("bites", { exact: true })).toBeVisible();
+    await expect(snake.getByText("4", { exact: true })).toBeVisible();
+    await page.screenshot({ path: "output/decky-snake.png" });
+    await snake.getByRole("button", { name: "Stop playing", exact: true }).click();
+    await page.evaluate(() =>
+        window.__deviceEvent({ kind: "game", over: true, score: 4, at: Date.now() }),
+    );
+    await expect(snake).toBeHidden();
     if (errors.length) throw new Error(errors.join("\n"));
     console.error(
-        "UI checks passed: black defaults, sliding/recentering grid, six actions, fourteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, profiles, pages, program/script selectors, dirty guard, minimum window size.",
+        "UI checks passed: black defaults, sliding/recentering grid, six actions, fourteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, profiles, pages, program/script selectors, dirty guard, snake on the deck, minimum window size.",
     );
 } finally {
     await browser.close();

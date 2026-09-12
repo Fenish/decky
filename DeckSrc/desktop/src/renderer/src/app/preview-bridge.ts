@@ -150,6 +150,7 @@ export function installPreviewBridge(): void {
         syncPage: unavailable,
         autoStart: async () => ({ on: false, available: false }),
         setAutoStart: async () => ({ on: false, available: false }),
+        stopGame: unavailable,
         exportConfig: unavailable,
         inspectProfileFile: async () => null,
         inspectProfile: async () => {

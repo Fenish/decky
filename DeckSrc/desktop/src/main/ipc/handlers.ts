@@ -63,6 +63,7 @@ export function registerHandlers(parts: HandlerParts): void {
     handle("app:autostart", () => autoStart());
     handle("app:setAutostart", (on) => setAutoStart(on));
     handle("deck:status", () => session.check());
+    handle("game:stop", () => session.serial(() => session.link.command("GAME off", 2000)));
     handle("page:sync", (pageId, frames, toggleFrames) =>
         pageSync.syncPage(pageId, frames, toggleFrames),
     );

@@ -7,6 +7,10 @@ public:
     virtual ~KeyListener() = default;
     // Whether a finger landing now presses a key at all.
     virtual bool accepting_presses() = 0;
+    // Where the finger is on the panel, whatever it is over, before any of
+    // this is read as a key. Only something that has taken the whole screen
+    // (a game) wants it; everything else leaves it alone.
+    virtual void touched(int x, int y, bool down, uint32_t now) { (void)x, (void)y, (void)down, (void)now; }
     // A finger landed on `cell`, moved while on it, or lifted. `y` is its
     // height on the screen.
     virtual void pressed(int cell, int y, uint32_t now) = 0;

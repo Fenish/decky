@@ -10,6 +10,7 @@ class Deck;
 //   UPDATING <percent>|END    Decky on the PC is updating itself
 //   BLOCK <bytes>             uploads over USB in blocks this big
 //   DRAG <mask>               keys to report finger movement on
+//   GAME snake|off            the easter egg takes the panel, or gives it back
 //   SDINFO, SCREEN, DISPLAY_STATE, DISPLAY_RESYNC   card, screen and scanout diagnostics
 class SessionCommands : public CommandTable<SessionCommands> {
 public:
@@ -25,6 +26,7 @@ private:
     bool updating(const char *line);
     bool block(const char *line);
     bool drag(const char *line);
+    bool game(const char *line);
     bool storage(const char *line);
     bool screen(const char *line);
     bool display_state(const char *line);

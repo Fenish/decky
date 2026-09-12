@@ -50,6 +50,7 @@ const api: DeckApi = {
         ipcRenderer.invoke("deck:wheel", page, cell, spec, values, index),
     autoStart: () => ipcRenderer.invoke("app:autostart"),
     setAutoStart: (on) => ipcRenderer.invoke("app:setAutostart", on),
+    stopGame: () => ipcRenderer.invoke("game:stop"),
     getConfig: () => ipcRenderer.invoke("config:get"),
     saveConfig: (config) => ipcRenderer.invoke("config:save", config),
     pickTarget: (kind) => ipcRenderer.invoke("target:pick", kind),

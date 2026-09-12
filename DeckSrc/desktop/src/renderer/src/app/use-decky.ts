@@ -34,6 +34,8 @@ export function useDecky() {
     // Counts the moments the active page landed on the deck, so widgets refresh.
     const [landed, setLanded] = useState(0);
     const [pressedCell, setPressedCell] = useState<number | null>(null);
+    /** The score of the game on the deck, while one is being played. */
+    const [playing, setPlaying] = useState<number | null>(null);
     const [busy, setBusy] = useState(false);
     const [checking, setChecking] = useState(false);
     const [message, setMessage] = useState("");
@@ -152,6 +154,9 @@ export function useDecky() {
         // nothing here.
         const deckEvents: DeckEventHandlers = {
             key: (event) => setPressedCell(event.down ? event.cell : null),
+            // The easter egg has the deck: the window keeps the score until
+            // it is over, and then it is the dashboard again.
+            game: (event) => setPlaying(event.over ? null : event.score),
             fallback: () => notify("USB unplugged. Decky is continuing over Wi-Fi."),
             reset: () => {
                 warmed.current = "";
@@ -325,6 +330,7 @@ export function useDecky() {
         keyStates,
         widgetStates,
         pressedCell,
+        playing,
         busy,
         checking,
         message,

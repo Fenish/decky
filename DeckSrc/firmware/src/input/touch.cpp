@@ -7,6 +7,7 @@ void Touch::poll(KeyListener &listener) {
     int x = 0, y = 0;
     const bool down = panel::touch_point(x, y);
     const uint32_t now = millis();
+    listener.touched(x, y, down, now);
     if (down && !contact_down_) {
         contact_down_ = true;
         if (!listener.accepting_presses() || now - last_press_ms_ < PRESS_GAP_MS) return;
