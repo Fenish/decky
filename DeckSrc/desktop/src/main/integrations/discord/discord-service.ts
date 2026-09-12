@@ -16,9 +16,10 @@
  *    channel, so any of them reads the channels again, and a slow read keeps
  *    them current besides;
  *  - its notifications (NOTIFICATION_CREATE): how many came since the key was
- *    last tapped, and from whom - kept with the token, so a restart keeps
- *    them. Discord says only what comes while Decky is linked: no RPC reads
- *    unread counts.
+ *    last tapped or Discord was last in front, and from whom - kept with the
+ *    token, so a restart keeps them. Discord says only what comes while Decky
+ *    is linked, and no RPC reads unread counts or read state: Discord's window
+ *    in front (as Windows says) stands for their being read.
  *
  * Controls (CONTROLS) are keys' actions; a toggle key's ON follows them
  * (AppControls, onControls). Widget keys show what STATES makes of Discord,
@@ -77,6 +78,8 @@ const RETRY_MS: Record<Exclude<IntegrationHealth, "ready">, number | null> = {
     denied: null,
 };
 const CAPTURE_MS = 1000;
+/** How often Windows is asked whether Discord is in front, while notifications are counted. */
+const FRONT_MS = 1000;
 const CHANNELS_MS = 15_000;
 /** How long Discord's Authorize may wait for a click. */
 const AUTHORIZE_MS = 120_000;
@@ -129,7 +132,10 @@ export interface DiscordParts {
     store: WidgetStore;
     settingsPath: string;
     finder: DiscordFinder;
-    /** The Windows helper: camera and screen capture (windows-host.ps1's "capture"). */
+    /**
+     * The Windows helper (windows-host.ps1): "capture" for the camera and screen
+     * share, "foreground" for whether Discord's window is in front.
+     */
     host: {
         request<T>(op: string): Promise<T>;
         hold(who: string, needed: boolean): void;
@@ -273,6 +279,7 @@ export class DiscordService implements IntegrationService {
     private settings: Data | null = null;
     private capture = { camera: false, screen: false };
     private capturing = false;
+    private fronting = false;
     /** The voice channel you are in. */
     private current: string | null = null;
     /** The channel whose speaking Discord tells, and who speaks there now. */
@@ -292,6 +299,7 @@ export class DiscordService implements IntegrationService {
     private stopped = false;
     private retry: ReturnType<typeof setTimeout> | null = null;
     private captureTimer: ReturnType<typeof setInterval> | null = null;
+    private frontTimer: ReturnType<typeof setInterval> | null = null;
     private channelsTimer: ReturnType<typeof setInterval> | null = null;
     private reread: ReturnType<typeof setTimeout> | null = null;
     private readonly connectTo: (clientId: string) => Promise<DiscordLink>;
@@ -360,6 +368,7 @@ export class DiscordService implements IntegrationService {
         this.keys = keys;
         this.needed = controls.size > 0 || keys.length > 0;
         this.watchCapture(controls.has("camera") || controls.has("share"));
+        this.watchFront(keys.some((item) => item.widget.type === "discord-notifications"));
         if (!this.needed) {
             this.disconnect();
             this.parts.onControls();
@@ -977,9 +986,44 @@ export class DiscordService implements IntegrationService {
         for (const wait of [400, 1200]) setTimeout(() => void this.readCapture(), wait);
     }
 
+    /**
+     * Discord's window in front, from Windows, while a key counts notifications:
+     * they are read there, so the count starts again. Windows is asked only
+     * while there is a count.
+     */
+    private watchFront(on: boolean): void {
+        if (on === (this.frontTimer !== null)) return;
+        this.parts.host.hold("discord-front", on);
+        if (!on) {
+            clearInterval(this.frontTimer!);
+            this.frontTimer = null;
+            return;
+        }
+        this.frontTimer = setInterval(() => void this.readFront(), FRONT_MS);
+        void this.readFront();
+    }
+
+    private async readFront(): Promise<void> {
+        if (this.fronting || this.inbox.unread === 0) return;
+        this.fronting = true;
+        try {
+            const read = await this.parts.host.request<{ discord?: boolean }>("foreground");
+            if (read.discord === true && this.inbox.unread > 0) {
+                this.inbox = { unread: 0 };
+                this.publish();
+                void this.keep();
+            }
+        } catch {
+            // Asked again next time.
+        } finally {
+            this.fronting = false;
+        }
+    }
+
     private disconnect(): void {
         this.clearRetry();
         this.watchCapture(false);
+        this.watchFront(false);
         this.drop();
         this.channels.clear();
     }

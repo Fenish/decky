@@ -135,7 +135,12 @@ function discord(
     const store = new WidgetStore(`${path}.widgets`, () => {});
     const statuses: IntegrationStatus[] = [];
     const capture = { camera: false, screen: false };
-    const host = { request: vi.fn(async () => ({ ...capture })), hold: vi.fn() };
+    // Whether Discord's window is the one in front.
+    const front = { discord: false };
+    const host = {
+        request: vi.fn(async (op: string) => (op === "foreground" ? { ...front } : { ...capture })),
+        hold: vi.fn(),
+    };
     const onControls = vi.fn();
     const focus = vi.fn();
     const visit = vi.fn(async () => {});
@@ -159,7 +164,7 @@ function discord(
         focus,
         visit,
     });
-    return { service, fake, store, statuses, capture, host, onControls, focus, visit, path };
+    return { service, fake, store, statuses, capture, front, host, onControls, focus, visit, path };
 }
 
 /** The URL an avatar's data URL was made of (the fake `image` keeps it). */
@@ -502,6 +507,32 @@ describe("Discord for the keys that use it", () => {
             expect(visit).toHaveBeenLastCalledWith(`discord://-/channels/@me/${DM}`),
         );
         expect(failed).not.toHaveBeenCalled();
+        service.stop();
+    });
+
+    it("clears the count once Discord is in front, where they are read", async () => {
+        const { service, fake, store, front, host } = discord();
+        await service.authorize();
+        service.sync(
+            profile({ 0: key({ kind: "widget", widget: { type: "discord-notifications" } }) }),
+        );
+        await linked(service);
+        fake.tell("NOTIFICATION_CREATE", {
+            channel_id: DM,
+            title: "Ada",
+            message: { author: { id: "111", username: "ada", global_name: "Ada" } },
+        });
+        await vi.waitFor(() => expect(store.get("home:0")?.inbox?.unread).toBe(1));
+        // Another window in front: the count stays.
+        await vi.waitFor(() => expect(host.request).toHaveBeenCalledWith("foreground"));
+        expect(store.get("home:0")?.inbox?.unread).toBe(1);
+        // Discord in front: read there, so the key counts again from nothing.
+        front.discord = true;
+        await vi.waitFor(
+            () => expect(store.get("home:0")?.inbox).toEqual({ health: "ready", unread: 0 }),
+            { timeout: 3000 },
+        );
+        expect(host.hold).toHaveBeenCalledWith("discord-front", true);
         service.stop();
     });
 

@@ -116,6 +116,17 @@ public static class DeckyAudio {
     // Console.Out is synchronized: a line from here never splits an answer.
     static void Line(string text) { Console.Out.WriteLine(text); Console.Out.Flush(); }
 }
+// The program whose window is in front: Discord's notifications are read there.
+public static class DeckyFront {
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    // An int, not the uint Windows gives: PowerShell's binder refuses a uint from here.
+    public static int ProcessId() {
+        uint process;
+        GetWindowThreadProcessId(GetForegroundWindow(), out process);
+        return (int)process;
+    }
+}
 "@
 
 # A device's level (0-100) and mute: the speaker (flow 0) or microphone (1).
@@ -223,6 +234,12 @@ while ($true) {
             "media-toggle" { $s = Session; if ($s) { $null = Await ($s.TryTogglePlayPauseAsync()) ([bool]) }; $result = @{} }
             "media-next" { $s = Session; if ($s) { $null = Await ($s.TrySkipNextAsync()) ([bool]) }; $result = @{} }
             "media-previous" { $s = Session; if ($s) { $null = Await ($s.TrySkipPreviousAsync()) ([bool]) }; $result = @{} }
+            # Discord's window in front: its notifications are read there.
+            "foreground" {
+                $process = [DeckyFront]::ProcessId()
+                $name = if ($process) { (Get-Process -Id $process -ErrorAction SilentlyContinue).ProcessName } else { "" }
+                $result = @{ discord = [bool]($name -like "Discord*") }
+            }
             # Discord's camera and screen share: Discord's RPC does not say.
             "capture" {
                 $screen = (InUse "graphicsCaptureProgrammatic" "(?i)discord") -or (InUse "graphicsCaptureWithoutBorder" "(?i)discord")
