@@ -74,6 +74,8 @@ project context.
   time-free base pictures, patched keys tracked per deck copy, every page warmed
   while loading, sound and prices as events, long titles slid by the deck,
   retired settings dropped on load
+- [profiles](profiles.md) — several setups, one in use; a .deckyprofile carries
+  one whole, and what travels is declared by each kind, never listed by hand
 - [speedtest](speedtest.md) — our own Speedtest.net client: ask c.speedtest.net
   first or Istanbul gets Liechtenstein; one dropped connection must not fail the
   run
