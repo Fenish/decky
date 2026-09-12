@@ -9,7 +9,7 @@
   <a href="#meet-your-new-workspace">Explore Decky</a> ·
   <a href="#make-it-your-own">Customize it</a> ·
   <a href="#build-your-decky">Get started</a> ·
-  <a href="DeckSrc/desktop/README.md">Desktop guide</a>
+  <a href="DeckSrc/desktop/README.md">Build it</a>
 </p>
 
 https://github.com/user-attachments/assets/bed2e491-3eae-4fae-b585-68fe51a1e4fc
@@ -106,8 +106,7 @@ appearance and redraws the affected key.
 
 Export your profile to keep a copy of your configuration or move it to another
 setup. Firmware installation and updates are available from the desktop app over
-USB. The [desktop guide](DeckSrc/desktop/README.md) covers pairing, profiles,
-and firmware setup in detail.
+USB.
 
 ## Build your Decky
 
@@ -130,8 +129,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Use the [desktop and firmware guide](DeckSrc/desktop/README.md#firmware) to
-prepare the panel. The firmware uses a pinned PlatformIO toolchain; the
+Use the [firmware guide](DeckSrc/firmware/README.md) to prepare the panel. The firmware uses a pinned PlatformIO toolchain; the
 repository's [hardware notes](DeckSrc/notes/memory/MEMORY.md) document the
 board, touch input, SD card, and display setup.
 
@@ -149,7 +147,7 @@ board, touch input, SD card, and display setup.
 
 <p align="center">
   <strong>Make room for the way you work.</strong><br>
-  <a href="#build-your-decky">Build Decky</a> · <a href="DeckSrc/desktop/README.md">Read the desktop guide</a>
+  <a href="#build-your-decky">Build Decky</a> · <a href="DeckSrc/desktop/README.md">Build the desktop app</a>
 </p>
 
 <p align="center"><sub>Hardware scenes and floating-key artwork are AI-generated product illustrations based on the project. App captures show an illustrative configuration in the real interface.</sub></p>

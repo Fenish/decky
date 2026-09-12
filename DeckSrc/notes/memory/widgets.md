@@ -194,3 +194,13 @@ Anything that must animate or follow a finger goes on the deck instead
 the deck should move goes through `sweepArc` with a motion; the user wants that
 only where asked (OBS's countdown). Removing a
 setting needs its kind's `retire`.
+
+**Designs are picked on the key, not only in the app.** A kind's `designs()`
+lists the whole widgets it can be shown as (a clock's three faces, a die /
+coin / yes-no / list, a level's arc and bar); a hold offers them on the key
+itself, a dot each, every tap moves on, and three quiet seconds save the one
+showing through `Workspace.setWidget`. `WidgetState.choosing` carries it, and
+`deckTurned` answers null while it is set so the deck stops turning that key
+and shows the preview instead. A widget whose hold already does something
+never gets the picker, so freeing dice's hold (a duplicate of its tap) was
+what let dice into it.
