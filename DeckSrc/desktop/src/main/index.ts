@@ -40,6 +40,7 @@ import { DiscordService } from "./integrations/discord/discord-service";
 import { OBS_FINDER } from "./integrations/obs/obs-finder";
 import { ObsService } from "./integrations/obs/obs-service";
 import { WidgetReadings } from "./widgets/readings";
+import { SpeedTester } from "./widgets/speedtest";
 import { LiveKeys } from "./widgets/live-keys";
 import { PingWatcher } from "./widgets/ping";
 import { WidgetPresses } from "./widgets/presses";
@@ -113,7 +114,12 @@ async function start(): Promise<void> {
         }),
     };
     await Promise.all(Object.values(integrations).map((service) => service.load()));
-    const widgetReadings = new WidgetReadings(pings, feeds, integrations);
+    const widgetReadings = new WidgetReadings(
+        pings,
+        feeds,
+        new SpeedTester(widgetStore),
+        integrations,
+    );
     readings = widgetReadings;
     try {
         profile.config = await loadConfig(
@@ -131,8 +137,9 @@ async function start(): Promise<void> {
 
     const pages = new DeckPages();
     const wheels = new DeckWheels(session, profile, pages, widgetStore);
-    const live = new LiveKeys(session, profile, pages, wheels);
-    const pageSync = new PageSync(session, profile, pages, live, wheels, keyStates, window);
+    const trace = (line: string): void => log.write(line);
+    const live = new LiveKeys(session, profile, pages, wheels, trace);
+    const pageSync = new PageSync(session, profile, pages, live, wheels, keyStates, window, trace);
     appControls = new AppControls(profile, keyStates, pageSync, integrations);
     appControls.refresh();
     const presses = new WidgetPresses(profile, widgetStore, widgetReadings, wheels, window);

@@ -74,6 +74,9 @@ project context.
   time-free base pictures, patched keys tracked per deck copy, every page warmed
   while loading, sound and prices as events, long titles slid by the deck,
   retired settings dropped on load
+- [speedtest](speedtest.md) — our own Speedtest.net client: ask c.speedtest.net
+  first or Istanbul gets Liechtenstein; one dropped connection must not fail the
+  run
 - [usb-upload-blocks](usb-upload-blocks.md) — 2 KB acknowledged blocks after
   BLOCK, thanks to the 8 KB receive buffer; test tools must honour READY's size
 - [deck-restart-diagnosis](deck-restart-diagnosis.md) — why the deck restarted:

@@ -425,7 +425,7 @@ try {
     await page.locator(".picker-entry", { hasText: "Widgets" }).click();
     await expect(
         page.getByRole("group", { name: "Widgets", exact: true }).getByRole("button"),
-    ).toHaveCount(13);
+    ).toHaveCount(14);
     await page.screenshot({ path: "output/decky-widget-picker.png" });
     await page.getByRole("button", { name: "Back to actions", exact: true }).click();
     // Apps are one step in too, each app's keys one further, with a way back from each.
@@ -831,8 +831,14 @@ try {
     if (bigLabelled.min <= bigBare.min || bigLabelled.max >= bigBare.max)
         throw new Error("A big icon did not give way to the label");
     await page.getByLabel("Key title", { exact: true }).fill("Vent");
-    await page.getByLabel("Icon size", { exact: true }).fill("100");
+    // Back to the usual size, which is no setting at all: the slider has to
+    // rest on it, not spring back to the size it had and skip over it.
+    const iconSize = page.getByLabel("Icon size", { exact: true });
+    await iconSize.fill("95");
     await matchingPreviews();
+    await iconSize.fill("100");
+    await matchingPreviews();
+    await expect(iconSize).toHaveValue("100");
     await page.getByRole("button", { name: "Save key", exact: true }).click();
     const accent = await vent.locator("canvas").evaluate((canvas) => {
         const pixels = canvas
@@ -1294,7 +1300,7 @@ try {
     );
     if (errors.length) throw new Error(errors.join("\n"));
     console.error(
-        "UI checks passed: black defaults, sliding/recentering grid, six actions, thirteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
+        "UI checks passed: black defaults, sliding/recentering grid, six actions, fourteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
     );
 } finally {
     await browser.close();

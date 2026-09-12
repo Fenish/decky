@@ -59,6 +59,7 @@ export class WidgetPresses {
             widgetStore,
             pings: readings.pings,
             feeds: readings.feeds,
+            speed: readings.speed,
             integrations: readings.integrations,
             wheels,
             failed: (error) =>

@@ -23,6 +23,7 @@ import { noteKind } from "./note";
 import { obsRecordKind, obsStreamKind } from "./obs";
 import { pingKind } from "./ping";
 import { pomodoroKind } from "./pomodoro";
+import { speedtestKind } from "./speedtest";
 import { systemKind } from "./system";
 import { timerKind } from "./timer";
 import { volumeKind } from "./volume";
@@ -41,6 +42,7 @@ export const WIDGET_KINDS: WidgetKinds = {
     volume: volumeKind,
     mic: micKind,
     system: systemKind,
+    speedtest: speedtestKind,
     ping: pingKind,
     crypto: cryptoKind,
     counter: counterKind,

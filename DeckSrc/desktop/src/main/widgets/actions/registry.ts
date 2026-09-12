@@ -6,6 +6,7 @@ import { MediaAction } from "./media";
 import { ObsAction } from "./obs";
 import { PingAction } from "./ping";
 import { SoundAction } from "./sound";
+import { SpeedtestAction } from "./speedtest";
 import { TaskManagerAction } from "./system";
 import type { WidgetAction } from "./widget-action";
 
@@ -18,6 +19,7 @@ export const WIDGET_ACTIONS: WidgetActions = {
     mic: new SoundAction("microphone"),
     media: new MediaAction(),
     system: new TaskManagerAction(),
+    speedtest: new SpeedtestAction(),
     crypto: new PriceAction(),
     dice: new DiceAction(),
     "obs-record": new ObsAction(),

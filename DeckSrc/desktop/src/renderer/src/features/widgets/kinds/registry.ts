@@ -16,6 +16,7 @@ import { noteView } from "./note/note-view";
 import { obsView } from "./obs/obs-view";
 import { pingView } from "./ping/ping-view";
 import { pomodoroView } from "./pomodoro/pomodoro-view";
+import { speedtestView } from "./speedtest/speedtest-view";
 import { systemView } from "./system/system-view";
 import { timerView } from "./timer/timer-view";
 import type { WidgetView } from "./widget-view";
@@ -31,6 +32,7 @@ export const WIDGET_VIEWS: WidgetViews = {
     volume: levelView("speaker"),
     mic: levelView("microphone"),
     system: systemView,
+    speedtest: speedtestView,
     ping: pingView,
     crypto: cryptoView,
     counter: counterView,

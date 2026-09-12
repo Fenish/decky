@@ -2,6 +2,7 @@ import type { DeckConfig } from "../../shared/config";
 import type { IntegrationServices } from "../integrations/integration";
 import type { WidgetFeeds } from "./feeds";
 import type { PingWatcher } from "./ping";
+import type { SpeedTester } from "./speedtest";
 
 /**
  * Everything widgets read from outside Decky: pings; the PC's sound, what is
@@ -12,6 +13,7 @@ export class WidgetReadings {
     constructor(
         readonly pings: PingWatcher,
         readonly feeds: WidgetFeeds,
+        readonly speed: SpeedTester,
         readonly integrations: IntegrationServices,
     ) {}
 
@@ -19,12 +21,14 @@ export class WidgetReadings {
     sync(config: DeckConfig): void {
         this.pings.sync(config);
         this.feeds.sync(config);
+        this.speed.sync(config);
         for (const service of Object.values(this.integrations)) service.sync(config);
     }
 
     stop(): void {
         this.pings.stop();
         this.feeds.stop();
+        this.speed.stop();
         for (const service of Object.values(this.integrations)) service.stop();
     }
 }

@@ -24,6 +24,7 @@ import type { NoteWidget } from "./widgets/note";
 import type { ObsState, ObsWidget } from "./widgets/obs";
 import type { PingWidget } from "./widgets/ping";
 import type { PomodoroWidget } from "./widgets/pomodoro";
+import type { SpeedtestWidget, SpeedRun } from "./widgets/speedtest";
 import type { SystemWidget } from "./widgets/system";
 import type { TimerWidget } from "./widgets/timer";
 import type { VolumeWidget } from "./widgets/volume";
@@ -39,6 +40,7 @@ export type Widget =
     | VolumeWidget
     | MediaWidget
     | SystemWidget
+    | SpeedtestWidget
     | MicWidget
     | DiceWidget
     | CryptoWidget
@@ -83,6 +85,8 @@ export interface WidgetState {
     history?: number[];
     /** What OBS says of the output an OBS widget shows (widgets/obs.ts). */
     obs?: ObsState;
+    /** How a speed test on the key is going, or how the last one went (widgets/speedtest.ts). */
+    speed?: SpeedRun;
     /** A touch's countdown: until when (epoch ms), and whether it will start, or stop, what the key shows. */
     arming?: { until: number; start: boolean };
     /**

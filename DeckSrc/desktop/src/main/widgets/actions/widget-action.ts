@@ -11,6 +11,7 @@ import type { IntegrationServices } from "../../integrations/integration";
 import type { DeckWheels } from "../deck-wheels";
 import type { WidgetFeeds } from "../feeds";
 import type { PingWatcher } from "../ping";
+import type { SpeedTester } from "../speedtest";
 import type { WidgetStore } from "../widget-state";
 
 /** What a widget's action can use. */
@@ -18,6 +19,7 @@ export interface WidgetActionContext {
     widgetStore: WidgetStore;
     pings: PingWatcher;
     feeds: WidgetFeeds;
+    speed: SpeedTester;
     wheels: DeckWheels;
     /** The apps Decky talks to, by id. */
     integrations: IntegrationServices;
