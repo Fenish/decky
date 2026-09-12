@@ -295,7 +295,8 @@ export interface DeckApi {
     /** Look inside a .deckyprofile - one chosen, or one opened with Decky - and keep it. */
     inspectProfileFile(path?: string): Promise<ProfileReport | null>;
     inspectProfile(id: string): Promise<ProfileReport>;
-    takeProfile(): Promise<{ id: string; name: string }>;
+    /** Keep the profile last looked at, under a name of your choosing. */
+    takeProfile(name?: string): Promise<{ id: string; name: string }>;
     /** A profile opened with Decky that has not been answered yet. */
     waitingProfile(): Promise<ProfileReport | null>;
     syncPage(

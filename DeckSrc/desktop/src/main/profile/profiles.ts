@@ -134,13 +134,30 @@ export class Profiles {
         await rename(temporary, this.listPath);
     }
 
+    /**
+     * A name no other profile has: the one asked for, else it with a number.
+     * Importing your own profile back should not leave you with two called
+     * the same thing.
+     */
+    freeName(name: string): string {
+        const wanted = profileName(name);
+        const taken = (value: string): boolean =>
+            this.list.profiles.some((item) => item.name.toLowerCase() === value.toLowerCase());
+        if (!taken(wanted)) return wanted;
+        for (let n = 2; n < PROFILES_MAX + 2; n++) {
+            const tried = profileName(`${wanted} ${n}`);
+            if (!taken(tried)) return tried;
+        }
+        return wanted;
+    }
+
     /** A profile of its own, with whatever `fill` puts in its folder. */
     async add(name: string, fill?: (folder: string) => Promise<void>): Promise<ProfileEntry> {
         if (this.list.profiles.length >= PROFILES_MAX)
             throw new Error(`Decky keeps up to ${PROFILES_MAX} profiles.`);
         const entry: ProfileEntry = {
             id: randomUUID().slice(0, 8),
-            name: profileName(name),
+            name: this.freeName(name),
             madeAt: Date.now(),
             usedAt: 0,
         };

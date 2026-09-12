@@ -86,7 +86,7 @@ export function registerHandlers(parts: HandlerParts): void {
     // Importing is two steps: look inside, then keep it.
     handle("profiles:inspectFile", (path) => workspace.inspectFile(path));
     handle("profiles:inspect", (id) => workspace.inspectProfile(id));
-    handle("profiles:take", () => workspace.takeProfile());
+    handle("profiles:take", (name) => workspace.takeProfile(name));
     handle("profiles:waiting", () => workspace.waitingProfile());
     handle("page:navigate", (pageId) => workspace.navigate(pageId));
     handle("page:back", (pageId) => workspace.back(pageId));

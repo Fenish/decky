@@ -65,7 +65,7 @@ const api: DeckApi = {
     exportConfig: (id) => ipcRenderer.invoke("config:export", id),
     inspectProfileFile: (path) => ipcRenderer.invoke("profiles:inspectFile", path),
     inspectProfile: (id) => ipcRenderer.invoke("profiles:inspect", id),
-    takeProfile: () => ipcRenderer.invoke("profiles:take"),
+    takeProfile: (name) => ipcRenderer.invoke("profiles:take", name),
     waitingProfile: () => ipcRenderer.invoke("profiles:waiting"),
     syncPage: (pageId, frames, toggleFrames) =>
         ipcRenderer.invoke("page:sync", pageId, frames, toggleFrames),

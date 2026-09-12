@@ -392,14 +392,17 @@ export class Workspace {
     }
 
     /**
-     * Keep the profile last looked at: it becomes one of your own, with its
-     * scripts in its own folder and its keys pointing at them there. It never
-     * touches the profile in use - the window offers to switch afterwards.
+     * Keep the profile last looked at: it becomes one of your own, under
+     * `name` or the one it came with, with its scripts in its own folder and
+     * its keys pointing at them there. It never touches the profile in use -
+     * the window offers to switch afterwards.
      */
-    async takeProfile(): Promise<{ id: string; name: string }> {
+    async takeProfile(name?: unknown): Promise<{ id: string; name: string }> {
         const bundle = this.waiting;
         if (!bundle) throw new Error("Open a profile first.");
-        const entry = await this.profiles.add(bundle.meta.name);
+        const entry = await this.profiles.add(
+            typeof name === "string" && name.trim() ? name : bundle.meta.name,
+        );
         const { config } = await placeFiles(bundle, this.profiles.filesFolder(entry.id));
         await saveConfig(this.profiles.configPath(entry.id), config);
         for (const app of Object.values(INTEGRATIONS)) {

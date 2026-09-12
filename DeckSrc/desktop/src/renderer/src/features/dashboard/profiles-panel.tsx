@@ -57,6 +57,7 @@ export function ProfilesPanel({
     // A profile takes two presses to delete: the bin arms, and a tick asks to
     // be sure. It disarms itself, so a stray press is never a deletion.
     const [arming, setArming] = useState<string | null>(null);
+    const [calling, setCalling] = useState("");
     useEffect(() => {
         if (!arming) return;
         const timer = setTimeout(() => setArming(null), ARM_MS);
@@ -76,7 +77,10 @@ export function ProfilesPanel({
     const [answered, setAnswered] = useState<ProfileReport | null>(null);
     if (offered !== answered) {
         setAnswered(offered);
-        if (offered) setLooking({ at: "file", report: offered });
+        if (offered) {
+            setLooking({ at: "file", report: offered });
+            setCalling(offered.name);
+        }
     }
 
     /** Anything that may fail, with the panel held while it runs. */
@@ -100,7 +104,9 @@ export function ProfilesPanel({
     const openFile = (): Promise<void> =>
         run(async () => {
             const report = await window.deck.inspectProfileFile();
-            if (report) setLooking({ at: "file", report });
+            if (!report) return;
+            setLooking({ at: "file", report });
+            setCalling(report.name);
         });
 
     const switchTo = (id: string): Promise<void> =>
@@ -112,7 +118,7 @@ export function ProfilesPanel({
 
     const keep = (): Promise<void> =>
         run(async () => {
-            const added = await window.deck.takeProfile();
+            const added = await window.deck.takeProfile(calling);
             // Straight to what was added, where the switch is one press away.
             setLooking({
                 at: "profile",
@@ -233,10 +239,22 @@ export function ProfilesPanel({
                         {looking.id === set.active ? "In use" : `Switch to ${looking.name}`}
                     </button>
                 ) : (
-                    <button className="add-step" disabled={busy} onClick={() => void keep()}>
-                        <Plus size={18} />
-                        Add as a profile
-                    </button>
+                    <>
+                        <label className="profile-name">
+                            Call it
+                            <input
+                                aria-label="Name for the imported profile"
+                                value={calling}
+                                maxLength={40}
+                                placeholder={report.name}
+                                onChange={(event) => setCalling(event.target.value)}
+                            />
+                        </label>
+                        <button className="add-step" disabled={busy} onClick={() => void keep()}>
+                            <Plus size={18} />
+                            Add as a profile
+                        </button>
+                    </>
                 )}
             </section>
         );
@@ -340,7 +358,7 @@ export function ProfilesPanel({
                     </div>
                 ))}
             </div>
-            <div className="settings-actions">
+            <div className="settings-actions profile-actions">
                 <button
                     disabled={busy}
                     onClick={() =>

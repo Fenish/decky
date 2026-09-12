@@ -835,6 +835,36 @@
 .page-list-row > button.arming {
     color: #f0b167;
 }
+.profile-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8d8168;
+}
+.profile-name > input {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #6b6248;
+    border-radius: 8px;
+    background: #0d0d09;
+    color: #ece3cf;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    transition: border-color 0.15s;
+}
+.profile-name > input:hover,
+.profile-name > input:focus {
+    border-color: #cbb282;
+}
 .profile-report {
     flex: 1;
     overflow-y: auto;

@@ -142,9 +142,7 @@ export function installPreviewBridge(): void {
         inspectProfile: async () => {
             throw new Error("Open Decky desktop to use profiles.");
         },
-        takeProfile: async () => {
-            throw new Error("Open Decky desktop to use profiles.");
-        },
+        takeProfile: async (name?: string) => ({ id: "default", name: name ?? "Default" }),
         // One profile in the browser preview: the one in local storage.
         profiles: async () => onlyProfile,
         useProfile: async () => config,

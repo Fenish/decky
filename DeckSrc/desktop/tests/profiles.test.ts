@@ -91,6 +91,19 @@ describe("the profiles on this PC", () => {
         expect(fourth.active.id).toBe("kept");
     });
 
+    it("never leaves two profiles called the same thing", async () => {
+        const profiles = new Profiles(folder);
+        await profiles.load();
+        // Importing your own profile back: the copy is told apart by a number.
+        const second = await profiles.add("Default");
+        expect(second.name).toBe("Default 2");
+        // The spelling asked for is kept; only the number is added.
+        expect((await profiles.add("default")).name).toBe("default 3");
+        expect(profiles.freeName("Work")).toBe("Work");
+        // A name of your own is taken as it is, when nothing else has it.
+        expect((await profiles.add("Streaming")).name).toBe("Streaming");
+    });
+
     it("keeps only so many", async () => {
         const profiles = new Profiles(folder);
         await profiles.load();
