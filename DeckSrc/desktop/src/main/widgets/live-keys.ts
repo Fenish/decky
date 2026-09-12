@@ -56,6 +56,11 @@ const OVERLAYS: Record<
 };
 export const OVERLAY_KINDS = Object.keys(OVERLAYS) as OverlayKind[];
 
+/** How often a key whose picture is not reaching the deck says so in deck.log. */
+const TRACE_MS = 10_000;
+/** And how often one that keeps drawing the very picture the deck holds. */
+const QUIET_MS = 60_000;
+
 type Copies<T> = Map<string, Map<number, Map<number, T>>>;
 
 export class LiveKeys {
@@ -77,12 +82,45 @@ export class LiveKeys {
     // wheel turned faster than its patches travel skips the pictures between.
     private readonly liveQueue = new Map<string, [frame: unknown, overlays: unknown]>();
 
+    // What became of a key's live pictures lately, for deck.log: one line a
+    // key every TRACE_MS, so a key that stopped showing what it should says
+    // why - refused by the deck, or never sent at all.
+    private readonly traced = new Map<string, { note: string; at: number; count: number }>();
+
     constructor(
         private readonly session: DeckSession,
         private readonly profile: Profile,
         private readonly pages: DeckPages,
         private readonly wheels: DeckWheels,
+        private readonly log: (line: string) => void = () => {},
     ) {}
+
+    /**
+     * A widget key's picture did not reach the deck's screen. Logged the first
+     * time, then at most every TRACE_MS with how often it happened since;
+     * "sent" clears it, so the log holds only what went wrong and for how long.
+     */
+    private trace(pageId: string, cell: number, note: string, every = TRACE_MS): void {
+        const address = `${pageId}:${cell}`;
+        if (note === "sent") {
+            const was = this.traced.get(address);
+            if (was) {
+                this.traced.delete(address);
+                this.log(`live ${address}: sending again, after ${was.count} × ${was.note}`);
+            }
+            return;
+        }
+        const now = Date.now();
+        const was = this.traced.get(address);
+        if (was?.note === note && now - was.at < every) {
+            was.count++;
+            return;
+        }
+        this.traced.set(address, { note, at: now, count: 1 });
+        this.log(
+            `live ${address}: ${note}${was?.note === note ? ` (${was.count} since)` : ""}`.trim(),
+        );
+    }
 
     private get status(): DeckStatus {
         return this.session.status;
@@ -209,8 +247,18 @@ export class LiveKeys {
         // Pages not shown are kept up to date too where the deck takes it (warm=1),
         // so one opens as it is now.
         const reachable = this.config.activePageId === pageId || this.status.identity.warm === true;
-        if (!this.pages.deviceReady || !reachable || index < 0 || !record)
+        if (!this.pages.deviceReady || !reachable || index < 0 || !record) {
+            this.trace(
+                pageId,
+                Number(cell),
+                !record
+                    ? "the deck holds no copy of this page"
+                    : !this.pages.deviceReady
+                      ? "the page shown is not ready"
+                      : "the page cannot be reached",
+            );
             return { ok: true, message: "The page is not on the deck." };
+        }
         // A tick drawn just before the widget moved or went must not land where it was.
         if (!isWidgetKey(this.config.pages[index]!, Number(cell)))
             return { ok: true, message: "That key is not a widget." };
@@ -328,8 +376,15 @@ export class LiveKeys {
         const { keyWidth: width, keyHeight: height } = this.status.identity;
         const patches = this.patchesIn(pageId, record.signature);
         const next = Buffer.from(frame);
-        const base = patches.get(cell) ?? record.frames[cell]!;
-        if (base.equals(next)) return { ok: true, message: "Unchanged." };
+        const held = patches.get(cell);
+        const base = held ?? record.frames[cell]!;
+        if (base.equals(next)) {
+            // Nothing to send - unless what the deck holds is not what it
+            // shows, when the key would stay as it is for good. Logged slowly:
+            // a key drawing the same picture minute after minute says so.
+            if (held) this.trace(pageId, cell, "unchanged, so nothing sent", QUIET_MS);
+            return { ok: true, message: "Unchanged." };
+        }
         const send = async (payload: Uint8Array, baseCrc: number): Promise<Reply> => {
             try {
                 return await this.session.link.push(
@@ -347,6 +402,7 @@ export class LiveKeys {
         let reply = await send(encodeLivePatch(base, next, width, height), crc32(base));
         if (!reply.ok && reply.message.includes("live base"))
             reply = await send(encodeLivePatch(null, next, width, height), 0);
+        this.trace(pageId, cell, reply.ok ? "sent" : `the deck refused it: ${reply.message}`);
         if (reply.ok) patches.set(cell, next);
         if (reply.ok) this.wheels.pictureSent(pageId, cell);
         return reply;

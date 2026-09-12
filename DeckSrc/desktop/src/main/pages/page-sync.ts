@@ -52,6 +52,7 @@ export class PageSync {
         private readonly wheels: DeckWheels,
         private readonly keyStates: KeyStateStore,
         private readonly window: MainWindow,
+        private readonly log: (line: string) => void = () => {},
     ) {}
 
     private get status(): DeckStatus {
@@ -313,6 +314,7 @@ export class PageSync {
                 2000,
             );
             if (shown.ok) {
+                this.log(`page ${pageId} ${signature}: shown from the copy the deck holds`);
                 const restored = await this.live.restoreKeys(pageId, index, signature);
                 if (!restored.ok) return restored;
                 this.pages.displayed = { pageId, ...known };
@@ -326,6 +328,9 @@ export class PageSync {
         let reply = await link.command(
             `${cacheOnly || independentToggles ? "CACHE" : "PAGE"} ${index} ${signature}`,
             5000,
+        );
+        this.log(
+            `page ${pageId} ${signature}: ${cacheOnly ? "cached" : "opened"} - ${reply.message}`,
         );
         if (!reply.ok) return reply;
         const { displayed } = this.pages;
@@ -398,6 +403,9 @@ export class PageSync {
                 reply = await link.command(`LIVE ${index} ${signature} ${cell} 0 0 0`, 2000);
                 if (!reply.ok) return reply;
             }
+            this.log(
+                `page ${pageId} ${signature}: built with ${sent.size} keys of its own, live pictures kept on ${[...patches.keys()].join(",") || "none"}`,
+            );
             this.live.dropOtherCopies(pageId, signature);
         } else {
             // A copy the deck kept: perhaps the very one the patches went to, and

@@ -1058,6 +1058,100 @@ describe("pages on the deck", () => {
         await call("config:save", config);
     });
 
+    it("keeps a page's widgets live after a key on it is edited", async () => {
+        const config = (await call("config:get")) as DeckConfig;
+        const widgetKey = (widget: unknown) => ({
+            label: "",
+            icon: "Clock",
+            color: "#eee8da",
+            action: { kind: "widget" as const, widget: widget as never },
+        });
+        const next: DeckConfig = structuredClone(config);
+        next.pages.push({
+            id: "lab",
+            name: "Lab",
+            parentId: "home",
+            keys: {
+                4: widgetKey({ type: "counter", start: 0, step: 1 }),
+                5: widgetKey({ type: "crypto", coin: "bitcoin", style: "chart" }),
+                6: widgetKey({ type: "system", show: "both", style: "graph", interval: 1 }),
+            },
+        });
+        next.activePageId = "lab";
+        await call("config:save", next);
+        const index = ((await call("config:get")) as DeckConfig).pages.findIndex(
+            (page) => page.id === "lab",
+        );
+        // What the window sends: every page's pictures, and each widget's
+        // picture as it is now (warm=1), drawn from the readings it has.
+        const live = (cell: number, mark: number) => new Uint8Array(BYTES).fill(mark);
+        const load = async (cells: number[], frames = black()) => {
+            const saved = (await call("config:get")) as DeckConfig;
+            return call(
+                "pages:cache",
+                saved.pages.map((page) => ({
+                    pageId: page.id,
+                    frames: page.id === "lab" ? frames : black(),
+                    toggleFrames: [],
+                })),
+                {
+                    widgets: cells.map((cell) => ({
+                        pageId: "lab",
+                        cell,
+                        frame: live(cell, 0x40 + cell),
+                    })),
+                    looks: [],
+                },
+            );
+        };
+        expect(await load([4, 5, 6])).toMatchObject({ ok: true });
+        const lab = () => fixture.deck.copies.findLast((c) => c.id === index && c.complete)!;
+        const onScreen = (cell: number) => Array.from(lab().live.get(cell) ?? new Uint8Array());
+        for (const cell of [4, 5, 6])
+            expect(onScreen(cell)).toEqual(Array.from(live(cell, 0x40 + cell)));
+        // A key on the page is edited: the price key becomes a page key. Its
+        // own picture changes, so the page is built again.
+        const edited: DeckConfig = structuredClone((await call("config:get")) as DeckConfig);
+        edited.pages.find((page) => page.id === "lab")!.keys[5] = {
+            label: "Home",
+            icon: "Folder",
+            color: "#eee8da",
+            action: { kind: "page", pageId: "home" },
+        };
+        await call("config:save", edited);
+        const frames = black();
+        frames[5] = new Uint8Array(BYTES).fill(0x99);
+        expect(await load([4, 6], frames)).toMatchObject({ ok: true });
+        // The keys that are still widgets show what they showed, and the one
+        // that is not shows its own picture again.
+        expect(onScreen(4)).toEqual(Array.from(live(4, 0x44)));
+        expect(onScreen(6)).toEqual(Array.from(live(6, 0x46)));
+        expect(lab().live.has(5)).toBe(false);
+        // A reading comes in: the picture that follows it reaches the deck.
+        expect(await call("deck:live", "lab", 4, new Uint8Array(BYTES).fill(0x71))).toMatchObject({
+            ok: true,
+        });
+        expect(onScreen(4)).toEqual(Array.from(new Uint8Array(BYTES).fill(0x71)));
+        // A new price key added afterwards: its first picture reaches it too.
+        const added: DeckConfig = structuredClone((await call("config:get")) as DeckConfig);
+        added.pages.find((page) => page.id === "lab")!.keys[7] = widgetKey({
+            type: "crypto",
+            coin: "bitcoin",
+            style: "ticker",
+        });
+        await call("config:save", added);
+        const withKey = black();
+        withKey[5] = new Uint8Array(BYTES).fill(0x99);
+        withKey[7] = new Uint8Array(BYTES).fill(0x22);
+        expect(await load([4, 6, 7], withKey)).toMatchObject({ ok: true });
+        expect(onScreen(7)).toEqual(Array.from(live(7, 0x47)));
+        expect(await call("deck:live", "lab", 7, new Uint8Array(BYTES).fill(0x63))).toMatchObject({
+            ok: true,
+        });
+        expect(onScreen(7)).toEqual(Array.from(new Uint8Array(BYTES).fill(0x63)));
+        await call("config:save", config);
+    });
+
     it("goes Back to the page a page was opened from, else to its parent", async () => {
         const config = (await call("config:get")) as DeckConfig;
         const next: DeckConfig = structuredClone(config);
