@@ -52,6 +52,7 @@ import type {
 import { choiceOf, nextChoice } from "../../../shared/widgets/choice";
 import type { Choice } from "../../../shared/widgets/choice";
 import { DiscordIpc } from "../../discord/discord-ipc";
+import { loadSecret, saveSecret } from "../settings-store";
 import type { WidgetStore } from "../../widgets/widget-state";
 import type { IntegrationService } from "../integration";
 import type { DiscordFinder } from "./discord-finder";
@@ -309,22 +310,29 @@ export class DiscordService implements IntegrationService {
     }
 
     /**
-     * The settings of the profile now in use: its own permission and its own
-     * notifications, read in place of the last profile's.
+     * The profile now in use: its own notifications, read in place of the last
+     * one's. The permission Discord gave is this PC's and stays.
      */
     async usePath(path: string): Promise<void> {
         this.parts.settingsPath = path;
         this.inbox = { unread: 0 };
-        this.token = "";
         await this.load();
     }
 
     async load(): Promise<void> {
+        // What Discord let Decky do belongs to this PC, so every profile is
+        // signed in once (settings-store.ts); what was counted is the
+        // profile's own.
+        this.token = await loadSecret("discord", "token");
         try {
             const saved = JSON.parse(await readFile(this.parts.settingsPath, "utf8")) as Data;
             this.inbox = inboxOf(saved.inbox);
-            if (typeof saved.token === "string" && saved.token)
+            // A permission kept beside the notifications by a Decky before
+            // secrets moved: taken up, so nobody authorizes twice.
+            if (!this.token && typeof saved.token === "string" && saved.token) {
                 this.token = safeStorage.decryptString(Buffer.from(saved.token, "base64"));
+                await saveSecret("discord", "token", this.token);
+            }
         } catch {
             // No permission kept yet.
         }
@@ -1011,9 +1019,9 @@ export class DiscordService implements IntegrationService {
     }
 
     /**
-     * What is kept for the next start: the token, encrypted (none kept when
-     * Windows cannot encrypt it), and the notifications counted. One write at
-     * a time, the newest last.
+     * What is kept for the next start: the notifications counted, with the
+     * profile, and the token with this PC (encrypted; none kept when Windows
+     * cannot encrypt it). One write at a time, the newest last.
      */
     private keep(): Promise<void> {
         this.saving = this.saving.catch(() => {}).then(() => this.write());
@@ -1021,17 +1029,10 @@ export class DiscordService implements IntegrationService {
     }
 
     private async write(): Promise<void> {
-        const sealed =
-            this.token && safeStorage.isEncryptionAvailable()
-                ? safeStorage.encryptString(this.token).toString("base64")
-                : "";
+        await saveSecret("discord", "token", this.token);
         const path = this.parts.settingsPath;
         await mkdir(dirname(path), { recursive: true });
-        await writeFile(
-            `${path}.tmp`,
-            JSON.stringify({ token: sealed, inbox: this.inbox }),
-            "utf8",
-        );
+        await writeFile(`${path}.tmp`, JSON.stringify({ inbox: this.inbox }), "utf8");
         await rename(`${path}.tmp`, path);
     }
 }

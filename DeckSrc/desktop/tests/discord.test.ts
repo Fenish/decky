@@ -6,6 +6,7 @@ import { createConfig, validateConfig } from "../src/shared/config";
 import type { DeckConfig, KeyConfig } from "../src/shared/config";
 import type { IntegrationStatus } from "../src/shared/integrations/integration";
 import { WidgetStore } from "../src/main/widgets/widget-state";
+import { useSecretsFolder } from "../src/main/integrations/settings-store";
 
 // Windows' credential protection, stood in for: "encrypted" is reversible here.
 vi.mock("electron", () => ({
@@ -126,7 +127,11 @@ function discord(
     fake = fakeDiscord(),
     path = join(tmpdir(), `decky-discord-${Math.random().toString(36).slice(2)}.json`),
 ) {
-    files.push(path, `${path}.widgets`);
+    files.push(path, `${path}.widgets`, `${path}.pc`);
+    // The permission Discord gives belongs to the PC, not to a profile
+    // (settings-store.ts). A service made with the same settings path shares
+    // it, as a second start of the same Decky would.
+    useSecretsFolder(`${path}.pc`);
     const store = new WidgetStore(`${path}.widgets`, () => {});
     const statuses: IntegrationStatus[] = [];
     const capture = { camera: false, screen: false };
@@ -183,7 +188,7 @@ function profile(keys: Record<number, KeyConfig>): DeckConfig {
 
 afterEach(async () => {
     vi.useRealTimers();
-    await Promise.all(files.splice(0).map((file) => rm(file, { force: true })));
+    await Promise.all(files.splice(0).map((file) => rm(file, { force: true, recursive: true })));
 });
 
 describe("Discord for the keys that use it", () => {
