@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, ChevronLeft, Play, Plus, Trash2, X } from "lucide-react";
 import type { Action, DeckPage, KeyConfig, Step } from "../../../../shared/config";
-import { appearanceOf } from "../../../../shared/config";
+import { appearanceOf, withAppearance } from "../../../../shared/config";
 import { ArtworkPreview } from "../artwork/artwork-preview";
 import { widgetLook } from "../widgets/draw-widget";
 import { viewOf } from "../widgets/kinds/registry";
@@ -428,11 +428,7 @@ export function KeyEditor({
                                         onChange(
                                             appearanceState === "on" && value.behavior === "toggle"
                                                 ? { ...value, activeAppearance: appearance }
-                                                : {
-                                                      ...value,
-                                                      ...appearance,
-                                                      artwork: appearance.artwork,
-                                                  },
+                                                : withAppearance(value, appearance),
                                         )
                                     }
                                 />

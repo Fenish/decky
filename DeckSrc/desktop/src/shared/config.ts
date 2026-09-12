@@ -70,6 +70,16 @@ export function appearanceOf(key: KeyConfig, on = false): KeyAppearance {
 export function displayedKey(key: KeyConfig | undefined, on: boolean): KeyConfig | undefined {
     return key ? { ...key, ...appearanceOf(key, on) } : undefined;
 }
+/**
+ * A key wearing an appearance: every appearance field comes from it, and one
+ * it leaves out is left out here too. Spreading it over the key instead would
+ * keep whatever the key had, so a setting could never be taken away - a size
+ * of 100% is no icon size at all, and would not stick.
+ */
+export function withAppearance(key: KeyConfig, appearance: KeyAppearance): KeyConfig {
+    const { label, icon, color, background, iconSize, artwork } = appearance;
+    return { ...key, label, icon, color, background, iconSize, artwork };
+}
 /** Whether a key is a widget; a nested page's Back key never is. */
 export function isWidgetKey(page: DeckPage, cell: number): boolean {
     return (
