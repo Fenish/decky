@@ -16,8 +16,19 @@ type Step = "offer" | "checking" | "other";
  * means restarting it into the chip's bootloader. So nothing happens until the
  * user asks: the one button checks the device, and installs only once the check
  * has found an ESP32-S3 with 4 MB of flash. Anything else is left as it was.
+ *
+ * The same offer rescues a deck whose update was cut short - a cable pulled
+ * mid-write leaves exactly such a silent device - and says so when Decky knows
+ * that is what happened.
  */
-export function FirstInstall({ device }: { device: UnknownDevice }) {
+export function FirstInstall({
+    device,
+    interrupted = false,
+}: {
+    device: UnknownDevice;
+    /** An install was under way and the deck never came back: this is a rescue. */
+    interrupted?: boolean;
+}) {
     const [step, setStep] = useState<Step>("offer");
     const [found, setFound] = useState<DeviceCheck | null>(null);
     const [message, setMessage] = useState("");
@@ -64,10 +75,15 @@ export function FirstInstall({ device }: { device: UnknownDevice }) {
                     "This isn't a CrowPanel",
                     `${found ? `Found ${found.chip}. ` : ""}Nothing was changed.`,
                 ]
-              : [
-                    "Install Decky on this device?",
-                    `The device on ${device.path} isn't running Decky yet.`,
-                ];
+              : interrupted
+                ? [
+                      "The update did not finish",
+                      `Writing to the deck stopped part way. Install it again on ${device.path} to put it right.`,
+                  ]
+                : [
+                      "Install Decky on this device?",
+                      `The device on ${device.path} isn't running Decky yet.`,
+                  ];
 
     return (
         <section className="first-install" aria-label="Set up a new deck">
@@ -104,7 +120,7 @@ export function FirstInstall({ device }: { device: UnknownDevice }) {
                         {step === "offer" && (
                             <button className="button primary" onClick={() => void setUp()}>
                                 <Download aria-hidden="true" />
-                                Install Decky
+                                {interrupted ? "Finish the update" : "Install Decky"}
                             </button>
                         )}
                         {step === "other" && (

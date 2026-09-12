@@ -125,8 +125,6 @@ try {
     });
     await expect(page.getByText("Install Decky on this device?")).toBeVisible({ timeout: 6000 });
     await expect(page.getByText("The device on COM9 isn't running Decky yet.")).toBeVisible();
-    // The device has been found, so the page stops saying it is looking.
-    await expect(page.getByText("Looking for Decky…")).toHaveCount(0);
     if (await page.evaluate(() => window.__probed))
         throw new Error("The device was probed before the user asked");
     // Buttons fade their background in 0.18 s; photograph the settled state.
@@ -152,6 +150,27 @@ try {
     await page.evaluate(() => {
         window.__unknown = null;
     });
+    // Firmware being written: the deck restarts into its bootloader, so this
+    // screen - not Settings, which is behind it - shows how far it has got.
+    await page.evaluate(() => {
+        window.__firmwareProgress?.({
+            stage: "writing",
+            part: 2,
+            parts: 4,
+            written: 60,
+            total: 100,
+        });
+    });
+    await expect(
+        page.getByRole("heading", { name: "Decky is updating", exact: true }),
+    ).toBeVisible();
+    const watching = page.locator(".disconnected-connect");
+    await expect(watching.getByText("Writing and verifying part 2 of 4")).toBeVisible();
+    await expect(
+        watching.getByRole("progressbar", { name: "Firmware install progress" }),
+    ).toHaveAttribute("aria-valuenow", "60");
+    await page.screenshot({ path: "output/decky-firmware-progress.png" });
+
     // Connected, the deck loads first: the screen says so, nothing opens and
     // nothing is editable until its pages are in, then the reveal plays.
     await page.evaluate(() => {
@@ -178,7 +197,13 @@ try {
         window.__holdLoading = false;
         window.__finishLoading?.();
     });
+    // Loading is over and the camera is moving: the screen says the deck is
+    // ready, never that it is offline - which it briefly did.
     await page.locator(".disconnected-screen[data-phase=rotating]").waitFor();
+    await expect(page.getByRole("heading", { name: "Decky is ready", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Decky is offline", exact: true })).toHaveCount(
+        0,
+    );
     await expect(page.locator(".app-shell")).not.toBeVisible();
     await page.waitForTimeout(350);
     await page.screenshot({ path: "output/decky-connect-turn.png" });

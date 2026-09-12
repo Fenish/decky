@@ -1,5 +1,5 @@
 import { duplicateKey, moveKey } from "../../../shared/key-layout";
-import type { DeckApi } from "../../../shared/api";
+import type { DeckApi, FirmwareProgress } from "../../../shared/api";
 import { createConfig, retireWidgets, validateConfig } from "../../../shared/config";
 // Browser previews use their own storage. Native actions remain unavailable there.
 export function installPreviewBridge(): void {
@@ -18,6 +18,10 @@ export function installPreviewBridge(): void {
         message: "Open Decky desktop to use device and system actions.",
     });
     let maximized = false;
+    const firmwareListeners = new Set<(progress: FirmwareProgress) => void>();
+    (window as unknown as { __firmwareProgress?: unknown }).__firmwareProgress = (
+        progress: FirmwareProgress,
+    ): void => firmwareListeners.forEach((handler) => handler(progress));
     const onlyProfile = {
         active: "default",
         profiles: [{ id: "default", name: "Default", madeAt: 0, usedAt: 0 }],
@@ -86,7 +90,14 @@ export function installPreviewBridge(): void {
             throw new Error("Open Decky desktop to check devices.");
         },
         firmwareInstall: unavailable,
-        onFirmwareProgress: () => () => {},
+        // The preview has no deck to install onto, so the listeners are kept
+        // where the visual checks can push a stage through them and see the
+        // screen an install leaves you on. All of them, as the real channel
+        // does: the Disconnected screen and a first install both listen.
+        onFirmwareProgress: (handler) => {
+            firmwareListeners.add(handler);
+            return () => firmwareListeners.delete(handler);
+        },
         onUpdatesChanged: () => () => {},
         appUpdateInstall: async () => {},
         appUpdateCancel: async () => {},

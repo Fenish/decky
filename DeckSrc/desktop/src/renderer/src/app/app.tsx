@@ -3,6 +3,7 @@ import { TitleBar } from "../components/title-bar";
 import { DisconnectedScreen } from "../features/connection/disconnected-screen";
 import { Dashboard, type DashboardHandle } from "../features/dashboard/dashboard";
 import { AppUpdateScreen } from "../features/updates/app-update-screen";
+import { useFirmwareWatch } from "../features/firmware/use-firmware-watch";
 import { useUpdates } from "../features/updates/use-updates";
 import { useDecky } from "./use-decky";
 import { transportOf } from "../../../shared/transport";
@@ -13,6 +14,9 @@ export function App() {
         ? `${deck.status.identity.serial}:${deck.status.identity.protocol}:${deck.status.identity.firmwareVersion ?? ""}`
         : "offline";
     const updates = useUpdates(firmwareKey);
+    // Firmware being written: the deck is in its bootloader, so the screen
+    // below is where it can be watched.
+    const updating = useFirmwareWatch(deck.status.connected);
     // Settings, where updates are installed, only exists on the dashboard.
     const dashboardShown = deck.status.connected && deck.dashboardReady;
     return (
@@ -31,6 +35,7 @@ export function App() {
                     checking={deck.checking}
                     connected={deck.status.connected}
                     booting={deck.booting}
+                    updating={updating}
                     stuckPort={!deck.status.connected ? deck.status.stuckPort : undefined}
                     onEntered={deck.enteredDashboard}
                     reducedMotion={deck.config.reducedMotion}

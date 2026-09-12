@@ -100,6 +100,23 @@
     font-weight: 550;
     color: #edeae3;
 }
+/* "starting" breathes while the deck loads: a sign of life that says nothing
+   it would have to take back. */
+.breathing {
+    animation: breathe 2.1s ease-in-out infinite;
+}
+@keyframes breathe {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.45;
+    }
+}
+.disconnected-screen.reduce-motion .breathing {
+    animation: none;
+}
 .disconnected-help {
     max-width: 34cqw;
     margin: 0.95cqw auto 0;
@@ -189,6 +206,23 @@
     }
     .disconnected-connect h1 {
         font-size: 3.2cqw;
+    }
+    /* "starting" breathes while the deck loads: a sign of life that says nothing
+   it would have to take back. */
+    .breathing {
+        animation: breathe 2.1s ease-in-out infinite;
+    }
+    @keyframes breathe {
+        0%,
+        100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.45;
+        }
+    }
+    .disconnected-screen.reduce-motion .breathing {
+        animation: none;
     }
     .disconnected-help {
         max-width: 44cqw;

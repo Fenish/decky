@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useState } from "react";
 import background from "../../assets/disconnected-obsidian-smooth.webp";
 import "./disconnected-screen.css";
-import type { UnknownDevice } from "../../../../shared/api";
+import type { FirmwareProgress, UnknownDevice } from "../../../../shared/api";
 import { FirstInstall } from "../firmware/first-install";
+import { InstallProgress } from "../firmware/install-progress";
 const DisconnectedModel = lazy(() =>
     import("./disconnected-model").then((m) => ({ default: m.DisconnectedModel })),
 );
@@ -11,6 +12,7 @@ export function DisconnectedScreen({
     checking,
     connected,
     booting = false,
+    updating,
     stuckPort,
     onEntered,
     reducedMotion,
@@ -23,6 +25,11 @@ export function DisconnectedScreen({
      * screen says so and opens only once it has.
      */
     booting?: boolean;
+    /**
+     * Firmware being written to the deck: it restarts into its bootloader, so
+     * this screen is where the install can be watched.
+     */
+    updating?: FirmwareProgress | null;
     /** A deck's USB bridge that stopped answering, which only a replug mends. */
     stuckPort?: string;
     onEntered: () => void;
@@ -39,7 +46,13 @@ export function DisconnectedScreen({
             className={`disconnected-screen ${entering ? "is-entering" : ""} ${booting ? "is-booting" : ""} ${entering && phase === "zooming" ? "is-zooming" : ""} ${reducedMotion ? "reduce-motion" : ""}`}
             data-phase={entering ? phase : "waiting"}
             aria-label={
-                entering ? "Opening Decky" : booting ? "Decky is starting" : "Decky is offline"
+                entering
+                    ? "Opening Decky"
+                    : booting
+                      ? "Decky is starting"
+                      : updating !== undefined && updating !== null
+                        ? "Decky is updating"
+                        : "Decky is offline"
             }
         >
             <img className="disconnected-backdrop" src={background} alt="" draggable={false} />
@@ -56,19 +69,37 @@ export function DisconnectedScreen({
                     </Suspense>
                 </div>
                 <div className="disconnected-connect">
-                    {booting ? (
+                    {entering ? (
+                        <h1>
+                            <strong>Decky</strong> is ready
+                        </h1>
+                    ) : booting ? (
                         <>
+                            {/* The word itself breathes while the deck loads;
+                                nothing counts the pages at you. */}
                             <h1>
-                                <strong>Decky</strong> is starting
+                                <strong>Decky</strong> is{" "}
+                                <span className="breathing">starting</span>
                             </h1>
                             <p className="disconnected-help">
                                 Loading your pages and widgets onto the deck. It opens here as soon
                                 as they are ready.
                             </p>
-                            <p className="disconnected-searching" aria-hidden="true">
-                                <span className="searching-dot" />
-                                Loading your pages…
-                            </p>
+                        </>
+                    ) : updating ? (
+                        <>
+                            {/* The deck is in its bootloader, so it is offline
+                                by definition: what matters is how far the
+                                writing has got. */}
+                            <h1>
+                                <strong>Decky</strong> is{" "}
+                                <span className="breathing">updating</span>
+                            </h1>
+                            <InstallProgress
+                                state={{ phase: "installing", progress: updating }}
+                                onConfirmPartitionChange={() => {}}
+                                onDismiss={() => {}}
+                            />
                         </>
                     ) : stuckPort ? (
                         <>
@@ -93,19 +124,17 @@ export function DisconnectedScreen({
                                 Plug it in with a USB data cable, or power it on to reconnect over
                                 Wi-Fi.
                             </p>
-                            {/* The live region below says the same for screen readers. Not
-                                while a device without Decky is offered: it has been found. */}
-                            {!waiting && (
-                                <p className="disconnected-searching" aria-hidden="true">
-                                    <span className="searching-dot" />
-                                    Looking for Decky…
-                                </p>
-                            )}
                         </>
                     )}
                 </div>
             </div>
-            {waiting && <FirstInstall key={waiting.path} device={waiting} />}
+            {waiting && (
+                <FirstInstall
+                    key={waiting.path}
+                    device={waiting}
+                    interrupted={updating !== undefined && updating !== null}
+                />
+            )}
             <span className="connection-announcement" role="status">
                 {booting
                     ? "Decky connected. Loading your pages onto the deck."
