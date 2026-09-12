@@ -198,11 +198,13 @@ export class Updates {
                 firmware = await loadPackage(bundledFirmwareFolder());
             }
             // From here the flasher owns the port. This runs inside the serial queue,
-            // so status checks and heartbeats wait for it instead of reopening the port.
+            // so heartbeats wait for it instead of reopening the port, and status
+            // checks are answered at once: offline (DeckSession.flashing).
             await session.link.close();
             session.status = { connected: false };
-            this.pageSync.resetDeviceCache();
+            session.flashing = true;
             this.installing = "deck";
+            this.pageSync.resetDeviceCache();
             try {
                 await flashFirmware(
                     target,
@@ -211,6 +213,9 @@ export class Updates {
                     firstInstall || allowPartitionChange === true,
                     progress,
                 );
+                // A deck just written takes a few seconds to start: it is offered as
+                // a device to set up again only if it never answers.
+                await session.awaitDeck(target);
             } catch (error) {
                 if (error instanceof PartitionChangeError)
                     return { ok: false, partitionChange: true, message: error.message };
@@ -219,6 +224,7 @@ export class Updates {
                     message: `Firmware was not installed: ${error instanceof Error ? error.message : String(error)}`,
                 };
             } finally {
+                session.flashing = false;
                 this.installing = null;
                 this.confirmedCrowPanels.delete(target);
                 session.forgetSilentPort(target);

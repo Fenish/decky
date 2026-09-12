@@ -23,12 +23,18 @@ const PORT_WATCH_MS = 1000;
 const SILENT_MS = 8000;
 // How long a USB port that turned out not to be this deck is left alone.
 const NOT_THIS_DECK_MS = 30_000;
+// How long a deck just written gets to start and answer, asked every second,
+// before its port counts as silent.
+const RESTART_WAIT_MS = 20_000;
+const RESTART_ASK_MS = 1000;
 
 export class DeckSession {
     readonly link = new DeckLink();
     // A second link, for asking USB ports what they are while on Wi-Fi.
     private readonly usbProbe = new DeckLink();
     status: DeckStatus = { connected: false };
+    /** Firmware is being written: the deck is offline, and says so without waiting for the link. */
+    flashing = false;
     // This PC's pairing with a deck for Wi-Fi, kept in wifi-pair.json.
     wifiPair: WifiPair | null = null;
     wifiPath = "";
@@ -79,6 +85,8 @@ export class DeckSession {
      * plugged back in while on Wi-Fi, means finding it again.
      */
     check(): Promise<DeckStatus> {
+        // An install holds the link for minutes; the window hears at once.
+        if (this.flashing) return Promise.resolve({ connected: false });
         return this.serial(async () => {
             if (this.status.connected) {
                 this.lastTransport = transportOf(this.status.identity);
@@ -93,6 +101,27 @@ export class DeckSession {
             this.lastTransport = after;
             return this.status;
         });
+    }
+
+    /**
+     * A deck just written, asked on its port until it answers or `waitMs` is
+     * over: it takes a few seconds to start, and a port silent meanwhile would
+     * be offered as a device to set up. The link is let go either way, so the
+     * next check finds the deck the usual way.
+     */
+    async awaitDeck(
+        path: string,
+        waitMs = RESTART_WAIT_MS,
+        askMs = RESTART_ASK_MS,
+    ): Promise<boolean> {
+        const until = Date.now() + waitMs;
+        let answered = false;
+        while (!answered && Date.now() < until) {
+            answered = (await this.link.identify(path)) !== null;
+            if (!answered) await new Promise((resolve) => setTimeout(resolve, askMs));
+        }
+        await this.link.close();
+        return answered;
     }
 
     /** Forget how often a port stayed silent: it is asked about afresh, after an install. */
