@@ -188,7 +188,17 @@ function profile(keys: Record<number, KeyConfig>): DeckConfig {
 
 afterEach(async () => {
     vi.useRealTimers();
-    await Promise.all(files.splice(0).map((file) => rm(file, { force: true, recursive: true })));
+    // Windows can still hold a file a debounced save has just written: give
+    // it a few tries, and never fail a passing test over the tidying up.
+    await Promise.all(
+        files
+            .splice(0)
+            .map((file) =>
+                rm(file, { force: true, recursive: true, maxRetries: 5, retryDelay: 20 }).catch(
+                    () => {},
+                ),
+            ),
+    );
 });
 
 describe("Discord for the keys that use it", () => {

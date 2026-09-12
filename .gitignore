@@ -22,3 +22,6 @@ DeckSrc/desktop/resources/firmware/
 
 # The firmware golden run's own runs (a deck's replies and screen captures).
 DeckSrc/firmware/tools/golden/runs/
+
+# Agent worktrees and other Claude Code scratch.
+.claude/
