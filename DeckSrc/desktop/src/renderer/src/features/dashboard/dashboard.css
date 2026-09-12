@@ -942,6 +942,12 @@
     flex: none;
     margin-top: 1px;
 }
+.preference-row > label > small {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    color: #8d8168;
+}
 .preference-row {
     display: flex;
     justify-content: space-between;

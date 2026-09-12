@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 import type { DeckConfig } from "../../../../shared/config";
+import type { AutoStart } from "../../../../shared/api";
 import { DiscordSettings } from "./discord-settings";
 import { WifiSettings } from "./wifi-settings";
 import { FirmwareSettings } from "./firmware-settings";
@@ -26,6 +27,11 @@ export function SettingsPanel({
 }) {
     const body = useRef<HTMLDivElement>(null);
     const updates = useRef<HTMLDivElement>(null);
+    // Decky keeps no setting of its own for this: Windows is asked.
+    const [startup, setStartup] = useState<AutoStart>({ on: false, available: false });
+    useEffect(() => {
+        void window.deck.autoStart().then(setStartup);
+    }, []);
     useEffect(() => {
         const scroller = body.current;
         const target = updates.current;
@@ -68,6 +74,27 @@ export function SettingsPanel({
             </header>
             {/* Only the body scrolls, so the title and close button stay in place. */}
             <div className="settings-body" ref={body}>
+                <div className="preference-row">
+                    <label id="startup-label">
+                        Start with Windows
+                        {!startup.available && <small>Available once Decky is installed</small>}
+                    </label>
+                    <button
+                        role="switch"
+                        aria-labelledby="startup-label"
+                        aria-checked={startup.on}
+                        disabled={!startup.available}
+                        className={`toggle ${startup.on ? "on" : ""}`}
+                        onClick={() =>
+                            void window.deck
+                                .setAutoStart(!startup.on)
+                                .then(setStartup)
+                                .catch((e) => notify(String(e)))
+                        }
+                    >
+                        <span />
+                    </button>
+                </div>
                 <div className="preference-row">
                     <label id="motion-label">Reduce motion</label>
                     <button

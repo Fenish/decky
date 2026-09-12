@@ -89,10 +89,14 @@ export class MainWindow {
         );
     }
 
-    /** Load the app into the window, which shows once it is ready. */
-    async load(): Promise<void> {
+    /**
+     * Load the app into the window, which shows once it is ready - unless
+     * Decky was started by Windows at login (auto-start.ts), when it waits in
+     * the tray until it is asked for.
+     */
+    async load(hidden = false): Promise<void> {
         const window = this.browserWindow!;
-        window.once("ready-to-show", () => this.browserWindow?.show());
+        if (!hidden) window.once("ready-to-show", () => this.browserWindow?.show());
         const url = process.env["ELECTRON_RENDERER_URL"];
         if (url) await window.loadURL(url);
         else await window.loadFile(join(__dirname, "../renderer/index.html"));

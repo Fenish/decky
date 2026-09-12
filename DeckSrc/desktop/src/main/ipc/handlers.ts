@@ -6,6 +6,7 @@
 
 import { dialog, shell } from "electron";
 import { validateConfig } from "../../shared/config";
+import { autoStart, setAutoStart } from "../app/auto-start";
 import type { KeyStateStore } from "../actions/key-state";
 import type { ActionRunner } from "../actions/runner";
 import type { MainWindow } from "../app/main-window";
@@ -59,6 +60,8 @@ export function registerHandlers(parts: HandlerParts): void {
     const handle = trustedHandle(window);
 
     // The deck: its status, pages and widget keys.
+    handle("app:autostart", () => autoStart());
+    handle("app:setAutostart", (on) => setAutoStart(on));
     handle("deck:status", () => session.check());
     handle("page:sync", (pageId, frames, toggleFrames) =>
         pageSync.syncPage(pageId, frames, toggleFrames),

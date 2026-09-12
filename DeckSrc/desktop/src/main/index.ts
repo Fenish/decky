@@ -17,6 +17,7 @@ import { AppControls } from "./actions/app-controls";
 import { KeyStateStore } from "./actions/key-state";
 import { ActionRunner } from "./actions/runner";
 import { Lifecycle } from "./app/lifecycle";
+import { startedHidden, startWithWindowsAtFirst } from "./app/auto-start";
 import { MainWindow } from "./app/main-window";
 import { loadConfig } from "./config/store";
 import { deckEventHandler } from "./deck/deck-events";
@@ -40,6 +41,7 @@ import type { IntegrationStatus } from "../shared/integrations/integration";
 import type { IntegrationServices } from "./integrations/integration";
 import { DISCORD_FINDER } from "./integrations/discord/discord-finder";
 import { DiscordService } from "./integrations/discord/discord-service";
+import { useSecretsFolder } from "./integrations/settings-store";
 import { OBS_FINDER } from "./integrations/obs/obs-finder";
 import { ObsService } from "./integrations/obs/obs-service";
 import { WidgetReadings } from "./widgets/readings";
@@ -115,6 +117,9 @@ async function start(): Promise<void> {
     // read from its folder (profiles.ts).
     const profiles = new Profiles(folder);
     await profiles.load();
+    // A password or a token was typed on this PC and is the PC's: kept once,
+    // beside the profiles, so switching never signs you out (settings-store).
+    useSecretsFolder(folder);
     const profile = new Profile(profiles.configPath());
     await session.loadWifiPair(join(folder, "wifi-pair.json"));
     // Widget state (counts, running timers), saved in the profile's folder.
@@ -239,6 +244,9 @@ async function start(): Promise<void> {
             }),
         );
     };
+    // On the first run of an installed Decky, it starts with Windows; after
+    // that the switch in Settings has the say.
+    void startWithWindowsAtFirst(folder);
     // Windows opens a .deckyprofile with this Decky. The installer says so
     // too; this keeps it true afterwards, and costs nothing when it already is.
     if (app.isPackaged && process.platform === "win32")
@@ -261,6 +269,6 @@ async function start(): Promise<void> {
         workspace,
         presence: richPresence,
     });
-    await window.load();
+    await window.load(startedHidden(process.argv));
     offerWaiting();
 }

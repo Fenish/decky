@@ -137,6 +137,8 @@ export function installPreviewBridge(): void {
         },
         runKey: unavailable,
         syncPage: unavailable,
+        autoStart: async () => ({ on: false, available: false }),
+        setAutoStart: async () => ({ on: false, available: false }),
         exportConfig: unavailable,
         inspectProfileFile: async () => null,
         inspectProfile: async () => {

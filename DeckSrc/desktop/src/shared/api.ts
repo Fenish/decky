@@ -274,6 +274,9 @@ export interface DeckApi {
         values: number[],
         index: number,
     ): Promise<Reply>;
+    /** Whether Decky starts with Windows, and whether this Decky can. */
+    autoStart(): Promise<AutoStart>;
+    setAutoStart(on: boolean): Promise<AutoStart>;
     saveConfig(config: DeckConfig): Promise<DeckConfig>;
     pickTarget(kind: "program" | "script"): Promise<string | null>;
     runKey(pageId: string, cell: number): Promise<Reply>;
@@ -307,6 +310,11 @@ export interface DeckApi {
     onEvent(handler: (event: DeckEvent) => void): () => void;
     onConfig(handler: (config: DeckConfig) => void): () => void;
     onActivity(handler: (activity: Activity) => void): () => void;
+}
+/** Whether Decky starts with Windows; `available` is false for a build that cannot. */
+export interface AutoStart {
+    on: boolean;
+    available: boolean;
 }
 /** A program or script a profile's key would run. */
 export interface ProfileRun {

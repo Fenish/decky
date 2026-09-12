@@ -53,6 +53,7 @@ try {
         const configListeners = new Set();
         const stateListeners = new Set();
         const widgetListeners = new Set();
+        window.__autoStart = { on: true, available: true };
         window.__profiles = {
             active: "default",
             profiles: [{ id: "default", name: "Default", madeAt: 0, usedAt: 0 }],
@@ -299,6 +300,9 @@ try {
                     live: true,
                 },
             }),
+            // An installed Decky starts with Windows; this one is not installed.
+            autoStart: async () => window.__autoStart,
+            setAutoStart: async (on) => (window.__autoStart = { on, available: true }),
             getConfig: async () => config,
             getKeyStates: async () => states,
             onKeyStates: (fn) => listen(stateListeners, fn),
@@ -307,10 +311,12 @@ try {
             // Profiles: one of its own, and nothing opened with Decky.
             profiles: async () => window.__profiles,
             useProfile: async (id) => {
+                window.__autoStart = { on: true, available: true };
                 window.__profiles = { ...window.__profiles, active: id };
                 return config;
             },
             addProfile: async (name) => {
+                window.__autoStart = { on: true, available: true };
                 window.__profiles = {
                     ...window.__profiles,
                     profiles: [
@@ -321,6 +327,7 @@ try {
                 return window.__profiles;
             },
             renameProfile: async (id, name) => {
+                window.__autoStart = { on: true, available: true };
                 window.__profiles = {
                     ...window.__profiles,
                     profiles: window.__profiles.profiles.map((item) =>
@@ -330,6 +337,7 @@ try {
                 return window.__profiles;
             },
             removeProfile: async (id) => {
+                window.__autoStart = { on: true, available: true };
                 window.__profiles = {
                     ...window.__profiles,
                     profiles: window.__profiles.profiles.filter((item) => item.id !== id),
@@ -351,8 +359,8 @@ try {
                     { type: "lava-lamp", label: "lava-lamp", count: 1, retired: true },
                 ],
                 runs: [
-                    { path: "C:\scripts\stream.ps1", kind: "script", carried: true },
-                    { path: "C:\Windows\notepad.exe", kind: "program", carried: false },
+                    { path: "C:\\scripts\\stream.ps1", kind: "script", carried: true },
+                    { path: "C:\\Windows\\notepad.exe", kind: "program", carried: false },
                 ],
                 apps: [{ id: "obs", name: "OBS Studio", settings: 1, secrets: true }],
                 files: { count: 1, bytes: 2048 },
@@ -1088,6 +1096,12 @@ try {
     await expect(page.getByRole("button", { name: "Sync keys", exact: true })).toBeVisible();
     if (await page.evaluate(() => window.__presenceEditing))
         throw new Error("The closed key editor still says a key is being edited");
+    // Starting with Windows: on by default, and the switch turns it off.
+    const startWith = page.getByRole("switch", { name: "Start with Windows", exact: true });
+    await expect(startWith).toHaveAttribute("aria-checked", "true");
+    await startWith.click();
+    await expect(startWith).toHaveAttribute("aria-checked", "false");
+
     // Profiles: the setups on this PC, beside Pages under the deck. Switching
     // to one shows what is in it first; nothing happens on the click itself.
     await page.getByRole("button", { name: "Profiles", exact: true }).click();
@@ -1135,7 +1149,7 @@ try {
     const importing = page.getByRole("region", { name: "Profile contents", exact: true });
     await expect(importing.getByText("1 × lava-lamp")).toBeVisible();
     await expect(importing.getByText(/no longer in Decky/)).toBeVisible();
-    await expect(importing.getByText("C:\scripts\stream.ps1")).toBeVisible();
+    await expect(importing.getByText("C:\\scripts\\stream.ps1")).toBeVisible();
     await expect(importing.getByText(/Import one only from someone you trust/)).toBeVisible();
     await expect(page.getByLabel("Name for the imported profile", { exact: true })).toHaveValue(
         "Default",
