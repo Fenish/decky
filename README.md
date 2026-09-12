@@ -12,6 +12,8 @@
   <a href="DeckSrc/desktop/README.md">Build it</a>
 </p>
 
+https://github.com/user-attachments/assets/fdbf7ccb-014a-4768-bcb0-b18ee1778c3f
+
 https://github.com/user-attachments/assets/bed2e491-3eae-4fae-b585-68fe51a1e4fc
 
 ![15 touch keys, USB and Wi-Fi, local SD artwork, and a Windows desktop app](docs/media/features.svg)
