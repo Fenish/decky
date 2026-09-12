@@ -34,6 +34,10 @@ public:
     // Their buffers stay with their slots, so freeing and reallocating pages
     // can't break memory into pieces too small for the next page.
     void retire_others(const Page &committed);
+    // Whether every slot has taken its buffer. Until then a live picture
+    // leaves a whole page free in one piece; after it, building a page asks
+    // for no memory, and that reservation would only starve the widgets.
+    bool slots_ready() const;
     // Every copy's live pictures and text go: they are the session's.
     void drop_lives();
     // Room for a live picture, taken from a page that is not on screen: the

@@ -4,17 +4,22 @@
 #include "common/memory.h"
 
 namespace {
-// Room for one more live picture that still leaves the floor free and a whole
-// page in one piece: live pictures must never be why a page cannot be built.
-bool live_room() { return memory::spare(KeyImage::bytes(), KeyImage::bytes() * Page::KEYS); }
+// Room for one more live picture. A page must never fail to build for want of
+// memory a live picture took, so a whole page is kept free in one piece - but
+// only while a slot has yet to take its buffer. Slots keep theirs once they
+// have them (PageCache), so after that a page needs no memory at all, and
+// holding back half a megabyte for it costs the widget keys their pictures.
+bool live_room(bool whole_page) {
+    return memory::spare(KeyImage::bytes(), whole_page ? KeyImage::bytes() * Page::KEYS : 0);
+}
 }  // namespace
 
 uint16_t *Page::own(int cell) const { return pixels + KeyImage::pixels() * cell; }
 
 uint16_t *Page::shown_off(int cell) const { return live[cell] ? live[cell] : own(cell); }
 
-uint16_t *Page::new_live(int cell) {
-    if (!live_room()) return nullptr;
+uint16_t *Page::new_live(int cell, bool whole_page) {
+    if (!live_room(whole_page)) return nullptr;
     live[cell] = memory::pixels(KeyImage::pixels());
     return live[cell];
 }

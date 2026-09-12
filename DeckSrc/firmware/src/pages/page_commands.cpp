@@ -407,13 +407,17 @@ bool PageCommands::live(const char *line) {
     // patch is refused, never written into the page's own picture: that must
     // stay what the signature says.
     const bool fresh = !page->live[cell];
-    if (fresh && !page->new_live(cell)) {
+    const bool whole_page = !pages.slots_ready();
+    if (fresh && !page->new_live(cell, whole_page)) {
         // No room for another. The pages that are not on screen give theirs up,
         // oldest first, and this key tries again: what you are looking at is
         // worth more than what you are not.
-        while (!page->live[cell] && pages.free_lives(page)) page->new_live(cell);
+        while (!page->live[cell] && pages.free_lives(page)) page->new_live(cell, whole_page);
         if (!page->live[cell]) {
-            reply().println("ERR live memory");
+            // What was left, so the desktop's log says how tight it really was.
+            reply().printf("ERR live memory free=%u largest=%u\n",
+                           static_cast<unsigned>(memory::free_bytes()),
+                           static_cast<unsigned>(memory::largest_block()));
             return true;
         }
     }

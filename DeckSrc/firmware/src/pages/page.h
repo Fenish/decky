@@ -24,7 +24,9 @@ public:
     // The key as it shows when not switched on: its live picture, else its own.
     uint16_t *shown_off(int cell) const;
     // A live picture for the key, begun empty; null without room for one.
-    uint16_t *new_live(int cell);
+    // `whole_page` keeps a page's worth free besides, for a cache that has
+    // slots still to allocate (PageCache::slots_ready).
+    uint16_t *new_live(int cell, bool whole_page);
     // A key's live picture goes, and its overlays with it.
     void drop_live(int cell);
     void drop_lives();

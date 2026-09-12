@@ -50,7 +50,7 @@ PageCache::Started PageCache::start(int id, uint32_t signature) {
         slot->mask = 0x7FFF;
         slot->lit_mask = base->lit_mask;
         for (int cell = 0; cell < Page::KEYS; ++cell) {
-            if (!base->live[cell] || !slot->new_live(cell)) continue;
+            if (!base->live[cell] || !slot->new_live(cell, !slots_ready())) continue;
             memcpy(slot->live[cell], base->live[cell], key_bytes);
             // Its overlays go with it, or none of it does.
             bool whole = true;
@@ -75,6 +75,12 @@ void PageCache::retire_others(const Page &committed) {
             page.drop_alternates();
             page.drop_lives();
         }
+}
+
+bool PageCache::slots_ready() const {
+    for (const auto &page : slots_)
+        if (!page.pixels) return false;
+    return true;
 }
 
 void PageCache::drop_lives() {
