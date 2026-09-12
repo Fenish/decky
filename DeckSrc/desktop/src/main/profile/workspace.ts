@@ -8,7 +8,7 @@ import { app as electron, dialog } from "electron";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { duplicateKey, moveKey } from "../../shared/key-layout";
 import type { KeyLocation } from "../../shared/key-layout";
-import { BACK_CELL, validateConfig } from "../../shared/config";
+import { BACK_CELL, homePageId, validateConfig } from "../../shared/config";
 import type { DeckConfig, KeyStates } from "../../shared/config";
 import type { Widget } from "../../shared/widgets";
 import type { Reply } from "../../shared/api";
@@ -193,6 +193,12 @@ export class Workspace {
         if (!page?.parentId) throw new Error("Page not found.");
         const from = this.cameFrom.get(page.id);
         return this.show(from && pages.some((p) => p.id === from) ? from : page.parentId);
+    }
+
+    /** Home, with nothing behind it to go back to: where a deck that started again begins. */
+    async home(): Promise<DeckConfig> {
+        this.cameFrom.clear();
+        return this.show(homePageId(this.profile.config));
     }
 
     private async show(pageId: unknown): Promise<DeckConfig> {

@@ -20,6 +20,7 @@ import { Lifecycle } from "./app/lifecycle";
 import { startedHidden, startWithWindowsAtFirst } from "./app/auto-start";
 import { MainWindow } from "./app/main-window";
 import { loadConfig } from "./config/store";
+import { homePageId } from "../shared/config";
 import { deckEventHandler } from "./deck/deck-events";
 import { RichPresence } from "./discord/presence";
 import { DeckSession } from "./deck/session";
@@ -168,6 +169,8 @@ async function start(): Promise<void> {
         app.quit();
         return;
     }
+    // Decky starts at Home, never on the page it was left on.
+    profile.config = { ...profile.config, activePageId: homePageId(profile.config) };
     widgetStore.reconcile(profile.config);
     widgetReadings.sync(profile.config);
     runner.prepare(profile.config);

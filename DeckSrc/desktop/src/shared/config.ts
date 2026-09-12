@@ -87,6 +87,10 @@ export function isWidgetKey(page: DeckPage, cell: number): boolean {
         page.keys[String(cell)]?.action.kind === "widget" && !(page.parentId && cell === BACK_CELL)
     );
 }
+/** Whether a key is a nested page's Back key: its place is kept for Back, never assigned. */
+export function isBackKey(page: DeckPage, cell: number): boolean {
+    return page.parentId !== null && cell === BACK_CELL;
+}
 export interface DeckPage {
     id: string;
     name: string;
@@ -98,6 +102,10 @@ export interface DeckConfig {
     pages: DeckPage[];
     activePageId: string;
     reducedMotion: boolean;
+}
+/** Home: the first page, where Decky starts and where a deck that started again begins. */
+export function homePageId(config: DeckConfig): string {
+    return config.pages[0]!.id;
 }
 export function createConfig(): DeckConfig {
     return {

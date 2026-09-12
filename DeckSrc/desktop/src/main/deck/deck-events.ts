@@ -1,4 +1,4 @@
-import { isWidgetKey } from "../../shared/config";
+import { isBackKey, isWidgetKey } from "../../shared/config";
 import type { DeckEvent } from "../../shared/api";
 import type { Lifecycle } from "../app/lifecycle";
 import type { MainWindow } from "../app/main-window";
@@ -57,9 +57,11 @@ export function deckEventHandler(parts: DeckEventParts): (event: DeckEvent) => v
     const taps = new EmptyTaps();
     const handlers: { [K in DeckEvent["kind"]]: (event: Extract<DeckEvent, { kind: K }>) => void } =
         {
+            // A deck that started again begins at Home, as Decky itself does.
             reset: () => {
                 log.write("BOOT: the deck started again");
                 pageSync.resetDeviceCache();
+                void workspace.home().catch(() => {});
             },
             // Finger movement turns wheels; the window has no use for it.
             wheel: (event) => {
@@ -88,8 +90,14 @@ export function deckEventHandler(parts: DeckEventParts): (event: DeckEvent) => v
                     return;
                 }
                 // Nothing is assigned here: five taps in a row on the same
-                // empty key is the easter egg, and nothing else happens.
-                if (page && event.down && !page.keys[String(event.cell)]) {
+                // empty key is the easter egg, and nothing else happens. A
+                // nested page's Back key has nothing assigned either, but is Back.
+                if (
+                    page &&
+                    event.down &&
+                    !page.keys[String(event.cell)] &&
+                    !isBackKey(page, event.cell)
+                ) {
                     if (taps.count(page.id, event.cell, event.at) < GAME_TAPS) return;
                     void session
                         .serial(() => session.link.command("GAME snake", 2000))
