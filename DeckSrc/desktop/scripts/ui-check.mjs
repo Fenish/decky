@@ -53,6 +53,10 @@ try {
         const configListeners = new Set();
         const stateListeners = new Set();
         const widgetListeners = new Set();
+        window.__profiles = {
+            active: "default",
+            profiles: [{ id: "default", name: "Default", madeAt: 0, usedAt: 0 }],
+        };
         // Widget state as the main process would push it, for the checks.
         window.__setWidgetStates = (next) => widgetListeners.forEach((fn) => fn(next));
         // Sound is heard, not seen: the checks follow what the page asks of it.
@@ -300,6 +304,54 @@ try {
             onKeyStates: (fn) => listen(stateListeners, fn),
             widgetStates: async () => ({}),
             onWidgetStates: (fn) => listen(widgetListeners, fn),
+            // Profiles: one of its own, and nothing opened with Decky.
+            profiles: async () => window.__profiles,
+            useProfile: async (id) => {
+                window.__profiles = { ...window.__profiles, active: id };
+                return config;
+            },
+            addProfile: async (name) => {
+                window.__profiles = {
+                    ...window.__profiles,
+                    profiles: [
+                        ...window.__profiles.profiles,
+                        { id: `p${window.__profiles.profiles.length}`, name, madeAt: 0, usedAt: 0 },
+                    ],
+                };
+                return window.__profiles;
+            },
+            renameProfile: async (id, name) => {
+                window.__profiles = {
+                    ...window.__profiles,
+                    profiles: window.__profiles.profiles.map((item) =>
+                        item.id === id ? { ...item, name } : item,
+                    ),
+                };
+                return window.__profiles;
+            },
+            removeProfile: async (id) => {
+                window.__profiles = {
+                    ...window.__profiles,
+                    profiles: window.__profiles.profiles.filter((item) => item.id !== id),
+                };
+                return window.__profiles;
+            },
+            onProfiles: () => () => {},
+            onProfileOffer: () => () => {},
+            waitingProfile: async () => null,
+            inspectProfileFile: async () => null,
+            inspectProfile: async (id) => ({
+                name: window.__profiles.profiles.find((item) => item.id === id)?.name ?? id,
+                madeAt: 0,
+                app: "",
+                pages: config.pages.length,
+                keys: config.pages.reduce((sum, page) => sum + Object.keys(page.keys).length, 0),
+                widgets: [],
+                runs: [],
+                apps: [],
+                files: { count: 0, bytes: 0 },
+            }),
+            takeProfile: async () => ({ id: "taken", name: "Taken" }),
             liveKey: async (pageId, cell, frame) => {
                 (window.__liveFrames ??= []).push({ pageId, cell, bytes: frame.length });
                 return { ok: true, message: "" };
@@ -1016,9 +1068,49 @@ try {
     await expect(page.getByLabel("Key title", { exact: true })).toHaveValue("Unsaved");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByRole("button", { name: "Discard", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Export profile", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sync keys", exact: true })).toBeVisible();
     if (await page.evaluate(() => window.__presenceEditing))
         throw new Error("The closed key editor still says a key is being edited");
+    // Profiles: the setups on this PC, beside Pages under the deck. Switching
+    // to one shows what is in it first; nothing happens on the click itself.
+    await page.getByRole("button", { name: "Profiles", exact: true }).click();
+    const profiles = page.getByRole("region", { name: "Profiles", exact: true });
+    await expect(profiles.getByText("Default", { exact: true })).toBeVisible();
+    await expect(profiles.getByRole("button", { name: "Import", exact: true })).toBeVisible();
+    // Any profile can be exported, not only the one in use.
+    await expect(
+        profiles.getByRole("button", { name: "Export Default", exact: true }),
+    ).toBeVisible();
+    await profiles.getByRole("button", { name: "Add profile", exact: true }).click();
+    await expect(profiles.getByText("New profile", { exact: true })).toBeVisible();
+    await profiles.getByRole("button", { name: "Rename New profile", exact: true }).click();
+    await page.getByLabel("Name for New profile", { exact: true }).fill("Streaming");
+    await page.getByLabel("Name for New profile", { exact: true }).press("Enter");
+    await expect(profiles.getByText("Streaming", { exact: true })).toBeVisible();
+    // What is in it, before switching to it.
+    await profiles.getByRole("button", { name: /^Streaming/ }).click();
+    const inside = page.getByRole("region", { name: "Profile contents", exact: true });
+    await expect(inside.getByRole("button", { name: /^Switch to Streaming/ })).toBeVisible();
+    await inside.getByRole("button", { name: "Back to profiles", exact: true }).click();
+    await expect(profiles.getByRole("button", { name: "Add profile", exact: true })).toBeVisible();
+    // Hovering is felt: the row lifts, and the bin reddens.
+    await profiles.getByRole("button", { name: "Delete Streaming", exact: true }).hover();
+    await page.screenshot({ path: "output/decky-profiles.png" });
+    // Deleting one takes two presses: the bin arms, and a tick asks to be sure.
+    await expect(
+        profiles.getByRole("button", { name: "Export Streaming", exact: true }),
+    ).toBeVisible();
+    const bin = profiles.getByRole("button", { name: "Delete Streaming", exact: true });
+    await bin.click();
+    // Armed, it says what deleting takes with it.
+    await expect(page.getByText(/removes the scripts it brought/)).toBeVisible();
+    await expect(profiles.getByText("Streaming", { exact: true })).toBeVisible();
+    const sure = profiles.getByRole("button", { name: "Confirm deleting Streaming", exact: true });
+    await expect(sure).toBeVisible();
+    await sure.click();
+    await expect(profiles.getByText("Streaming", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+
     // Discord: off by default, one switch; on, the card friends see.
     const discord = page.getByRole("region", { name: "Discord", exact: true });
     const onDiscord = discord.getByRole("switch", { name: "Show on Discord", exact: true });
@@ -1300,7 +1392,7 @@ try {
     );
     if (errors.length) throw new Error(errors.join("\n"));
     console.error(
-        "UI checks passed: black defaults, sliding/recentering grid, six actions, fourteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, pages, program/script selectors, dirty guard, minimum window size.",
+        "UI checks passed: black defaults, sliding/recentering grid, six actions, fourteen widgets, widget search by purpose, apps and their settings, live clock widget, crypto settings, macro reorder, separate toggle artwork, success/failure, dock shortcuts, profiles, pages, program/script selectors, dirty guard, minimum window size.",
     );
 } finally {
     await browser.close();

@@ -268,10 +268,18 @@
     color: #c4c1b7;
     border-radius: 8px;
 }
+.deck-dock button {
+    transition:
+        background-color 0.15s,
+        color 0.15s;
+}
 .deck-dock button.active,
 .deck-dock button:hover:not(:disabled) {
     color: #fff6e5;
-    background: #ece0c30b;
+    background: #ece0c322;
+}
+.deck-dock button:hover:not(:disabled) {
+    background: #ece0c330;
 }
 .deck-dock button:disabled {
     opacity: 0.28;
@@ -395,6 +403,10 @@
     padding: 10px 8px 13px;
     font-size: 13px;
     color: #a29f94;
+    transition: color 0.15s;
+}
+.editor-tabs button:hover {
+    color: #efe8d9;
 }
 .editor-tabs button.active {
     color: #eee8db;
@@ -560,9 +572,14 @@
     color: #e8e3d8;
     box-shadow: inset 0 1px 0 #fff3d311;
 }
+.action-options > button {
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
+}
 .action-options > button:hover {
-    background: #29261b;
-    border-color: #d4c29a;
+    background: #322d20;
+    border-color: #e2d0a8;
 }
 .soundpad-option {
     display: flex;
@@ -678,9 +695,14 @@
     font-size: 13px;
     color: #e0d6c1;
 }
+.add-step {
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
+}
 .add-step:hover:not(:disabled) {
-    border-color: #d4c19b;
-    background: #282319;
+    border-color: #e6d3aa;
+    background: #322a1d;
 }
 .add-step-types {
     display: grid;
@@ -693,6 +715,13 @@
     border: 1px solid #6f634b70;
     border-radius: 7px;
     background: #262117;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
+}
+.add-step-types button:hover:not(:disabled) {
+    border-color: #d4c19b;
+    background: #322a1d;
 }
 .utility-panel header {
     display: flex;
@@ -702,7 +731,16 @@
 }
 .utility-panel header button {
     display: flex;
-    padding: 2px;
+    padding: 5px;
+    border-radius: 8px;
+    color: #c9c0ad;
+    transition:
+        background-color 0.15s,
+        color 0.15s;
+}
+.utility-panel header button:hover {
+    color: #fff6e7;
+    background: #ffeccc1f;
 }
 .page-list {
     overflow: auto;
@@ -719,6 +757,13 @@
     border-radius: 10px;
     margin-bottom: 10px;
     background: #13130e90;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
+}
+.page-list-row:hover {
+    border-color: #a99a78;
+    background: #221e15;
 }
 .page-list-row.active {
     border-color: #d1c19999;
@@ -726,12 +771,30 @@
 .page-list-row > button:not(.page-open) {
     padding: 5px;
     display: flex;
+    border-radius: 7px;
     color: #a4987f;
+    transition:
+        background-color 0.15s,
+        color 0.15s;
+}
+.page-list-row > button:not(.page-open):hover {
+    color: #fff3dc;
+    background: #ffeccc22;
+}
+/* The bin means it: it reddens under the pointer, and ambers once armed. */
+.page-list-row > button[aria-label^="Delete"]:hover {
+    color: #ff9d8c;
+    background: #ff7a6e1f;
+}
+.page-list-row > button.arming:hover {
+    color: #ffc98a;
+    background: #f0b1671f;
 }
 .page-list-row > button:last-child {
     margin-right: 9px;
 }
 .page-open {
+    transition: color 0.15s;
     min-width: 0;
     flex: 1;
     display: flex;
@@ -742,11 +805,109 @@
     text-align: left;
     color: #ded5c3;
 }
+.page-list-row:hover .page-open {
+    color: #fff6e7;
+}
 .page-open > span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1;
+}
+/* Profiles: the list's rows say when each was last used, and what is inside
+   one is read before switching to it or importing it. */
+.page-open > small {
+    color: #8d8168;
+    font-size: 11px;
+}
+.page-list-row > input {
+    flex: 1;
+    min-width: 0;
+    margin: 8px 0 8px 10px;
+    padding: 6px 8px;
+    border: 1px solid #6b6248;
+    border-radius: 7px;
+    background: #0d0d09;
+    color: #ece3cf;
+    font: inherit;
+    font-size: 13px;
+}
+.page-list-row > button.arming {
+    color: #f0b167;
+}
+.profile-report {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.profile-summary {
+    margin: 0 0 14px;
+    color: #b6ab92;
+    font-size: 12.5px;
+}
+.profile-part {
+    margin-bottom: 16px;
+}
+.profile-part h3 {
+    margin: 0 0 7px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8d8168;
+}
+.profile-part ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.profile-part li {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    margin-bottom: 6px;
+    border: 1px solid #514d4160;
+    border-radius: 9px;
+    background: #13130e80;
+    font-size: 12.5px;
+    color: #ded5c3;
+}
+.profile-part li > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-part li > em {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-style: normal;
+    font-size: 11px;
+    color: #8d8168;
+}
+.profile-part li.gone > span {
+    color: #a4987f;
+    text-decoration: line-through;
+}
+.profile-part li.gone > em {
+    color: #d8a657;
+}
+.profile-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 8px 0 0;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #d8a657;
+}
+.profile-warning > svg {
+    flex: none;
+    margin-top: 1px;
 }
 .preference-row {
     display: flex;
@@ -852,9 +1013,14 @@
     font-size: 13px;
     color: #e0d3b9;
 }
+.settings-actions button {
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
+}
 .settings-actions button:hover:not(:disabled) {
-    border-color: #c5b28c;
-    background: #292116;
+    border-color: #dcc79c;
+    background: #322a1d;
 }
 .settings-footnote {
     margin-top: auto;
@@ -970,6 +1136,15 @@
     border-radius: 7px;
     padding: 9px 0;
     color: #baa98b;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s,
+        color 0.15s;
+}
+.icon-options button:hover {
+    border-color: #cbb282;
+    background: #2f2718;
+    color: #f1dfba;
 }
 .icon-options button.selected {
     border-color: #d5b77a;

@@ -81,6 +81,9 @@ svg {
     flex-shrink: 0;
 }
 .button {
+    transition:
+        background-color 0.15s,
+        border-color 0.15s;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -94,8 +97,8 @@ svg {
     background: linear-gradient(150deg, #20201c90, #0d0d0dcc);
 }
 .button:hover:not(:disabled) {
-    border-color: #b4a78e;
-    background: #26241d;
+    border-color: #cdbe9e;
+    background: #2e2b22;
 }
 .button.primary {
     background: linear-gradient(145deg, #f7e9d2, #eddfc5);
