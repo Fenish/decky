@@ -268,12 +268,6 @@ export function ProfilesPanel({
                     <X size={22} />
                 </button>
             </header>
-            {arming && (
-                <p className="profile-warning">
-                    <AlertTriangle size={14} /> Deleting a profile also removes the scripts it
-                    brought with it. Press the tick to be sure.
-                </p>
-            )}
             <div className="page-list">
                 {set.profiles.map((item) => (
                     <div
@@ -344,6 +338,9 @@ export function ProfilesPanel({
                                 onClick={() => {
                                     if (arming !== item.id) {
                                         setArming(item.id);
+                                        notify(
+                                            `Press again to delete ${item.name}. Deleting also removes the scripts it brought.`,
+                                        );
                                         return;
                                     }
                                     setArming(null);

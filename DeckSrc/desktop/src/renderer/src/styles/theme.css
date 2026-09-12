@@ -80,6 +80,12 @@ p {
 svg {
     flex-shrink: 0;
 }
+/* Every scrolling area wears Decky's scrollbar rather than Windows' own, so a
+   new one never arrives in the wrong colours. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #605740 transparent;
+}
 .button {
     transition:
         background-color 0.15s,

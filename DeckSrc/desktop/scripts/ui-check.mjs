@@ -339,7 +339,24 @@ try {
             onProfiles: () => () => {},
             onProfileOffer: () => () => {},
             waitingProfile: async () => null,
-            inspectProfileFile: async () => null,
+            inspectProfileFile: async () => ({
+                name: "Default",
+                madeAt: Date.UTC(2026, 8, 12),
+                app: "0.3.0",
+                pages: 3,
+                keys: 12,
+                widgets: [
+                    { type: "clock", label: "Clock", count: 2, retired: false },
+                    { type: "system", label: "System", count: 1, retired: false },
+                    { type: "lava-lamp", label: "lava-lamp", count: 1, retired: true },
+                ],
+                runs: [
+                    { path: "C:\scripts\stream.ps1", kind: "script", carried: true },
+                    { path: "C:\Windows\notepad.exe", kind: "program", carried: false },
+                ],
+                apps: [{ id: "obs", name: "OBS Studio", settings: 1, secrets: true }],
+                files: { count: 1, bytes: 2048 },
+            }),
             inspectProfile: async (id) => ({
                 name: window.__profiles.profiles.find((item) => item.id === id)?.name ?? id,
                 madeAt: 0,
@@ -1101,14 +1118,30 @@ try {
         profiles.getByRole("button", { name: "Export Streaming", exact: true }),
     ).toBeVisible();
     const bin = profiles.getByRole("button", { name: "Delete Streaming", exact: true });
+    // Armed, it says what deleting takes with it - in the notice at the foot,
+    // so nothing in the panel moves under the pointer.
+    const listBox = await profiles.locator(".page-list").boundingBox();
     await bin.click();
-    // Armed, it says what deleting takes with it.
     await expect(page.getByText(/removes the scripts it brought/)).toBeVisible();
+    expect(await profiles.locator(".page-list").boundingBox()).toEqual(listBox);
     await expect(profiles.getByText("Streaming", { exact: true })).toBeVisible();
     const sure = profiles.getByRole("button", { name: "Confirm deleting Streaming", exact: true });
     await expect(sure).toBeVisible();
     await sure.click();
     await expect(profiles.getByText("Streaming", { exact: true })).toHaveCount(0);
+    // Importing: what is in the file, what it will be called, and the warning
+    // that its keys can run programs of their own.
+    await profiles.getByRole("button", { name: "Import", exact: true }).click();
+    const importing = page.getByRole("region", { name: "Profile contents", exact: true });
+    await expect(importing.getByText("1 × lava-lamp")).toBeVisible();
+    await expect(importing.getByText(/no longer in Decky/)).toBeVisible();
+    await expect(importing.getByText("C:\scripts\stream.ps1")).toBeVisible();
+    await expect(importing.getByText(/Import one only from someone you trust/)).toBeVisible();
+    await expect(page.getByLabel("Name for the imported profile", { exact: true })).toHaveValue(
+        "Default",
+    );
+    await page.screenshot({ path: "output/decky-profile-import.png" });
+    await importing.getByRole("button", { name: "Back to profiles", exact: true }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
 
     // Discord: off by default, one switch; on, the card friends see.

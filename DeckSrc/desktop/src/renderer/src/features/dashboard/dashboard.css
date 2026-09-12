@@ -425,8 +425,6 @@
     min-height: 0;
     overflow: auto;
     padding-top: 21px;
-    scrollbar-width: thin;
-    scrollbar-color: #605740 transparent;
 }
 /* Panel scroll areas reach into the panel's side padding: the scrollbar sits out
    there with a clear gap before the content, and on the left, selection rings and
@@ -533,7 +531,6 @@
 .action-picker {
     padding-top: 1px;
     overflow: auto;
-    scrollbar-width: thin;
 }
 .action-search {
     display: flex;
@@ -746,12 +743,13 @@
     overflow: auto;
     flex: 1;
     margin-bottom: 20px;
-    scrollbar-width: thin;
-    scrollbar-color: #605740 transparent;
 }
 .page-list-row {
     display: flex;
     align-items: center;
+    /* What a row holds may change - a name being typed, a bin armed - and the
+       list must not move under the pointer while it does. */
+    min-height: 47px;
     gap: 6px;
     border: 1px solid #514d4170;
     border-radius: 10px;
@@ -823,8 +821,8 @@
 .page-list-row > input {
     flex: 1;
     min-width: 0;
-    margin: 8px 0 8px 10px;
-    padding: 6px 8px;
+    margin: 0 0 0 10px;
+    padding: 8px;
     border: 1px solid #6b6248;
     border-radius: 7px;
     background: #0d0d09;
@@ -839,7 +837,10 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
+    /* Clear of what is in the profile above it; the rule that separates them
+       belongs to that list (.profile-report), under its last line. */
+    margin-top: 16px;
+    margin-bottom: 12px;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -869,6 +870,8 @@
     flex: 1;
     overflow-y: auto;
     padding-right: 4px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #5c523950;
 }
 .profile-summary {
     margin: 0 0 14px;
@@ -1029,6 +1032,16 @@
     margin-top: 22px;
     padding-bottom: 22px;
     border-bottom: 1px solid #5c523950;
+}
+/* In Profiles nothing follows the buttons, so a rule under them separates
+   nothing. It goes above instead: the list on one side, what you can do to it
+   on the other. */
+.settings-actions.profile-actions {
+    margin-top: 0;
+    padding-top: 16px;
+    padding-bottom: 0;
+    border-top: 1px solid #5c523950;
+    border-bottom: none;
 }
 .settings-actions button {
     display: flex;
@@ -1467,8 +1480,6 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: #605740 transparent;
 }
 .wifi-settings {
     margin-top: 22px;
