@@ -83,6 +83,12 @@
             "en-US"
         ],
         "asar": true,
+        "extraResources": [
+            {
+                "from": "resources/profile.ico",
+                "to": "profile.ico"
+            }
+        ],
         "publish": [
             {
                 "provider": "github"
@@ -92,6 +98,15 @@
             "target": "nsis",
             "icon": "resources/icon.ico"
         },
+        "fileAssociations": [
+            {
+                "ext": "deckyprofile",
+                "name": "Decky profile",
+                "description": "Decky profile",
+                "icon": "resources/profile.ico",
+                "role": "Editor"
+            }
+        ],
         "nsis": {
             "artifactName": "Decky-Setup-${version}.${ext}",
             "oneClick": false,
