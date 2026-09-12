@@ -80,3 +80,16 @@ void PageCache::retire_others(const Page &committed) {
 void PageCache::drop_lives() {
     for (auto &page : slots_) page.drop_lives();
 }
+
+bool PageCache::free_lives(const Page *keep) {
+    Page *oldest = nullptr;
+    for (auto &page : slots_) {
+        if (&page == active || &page == pending || &page == keep) continue;
+        bool holds = false;
+        for (uint16_t *live : page.live) holds = holds || live;
+        if (holds && (!oldest || page.used < oldest->used)) oldest = &page;
+    }
+    if (!oldest) return false;
+    oldest->drop_lives();
+    return true;
+}

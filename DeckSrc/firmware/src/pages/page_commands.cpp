@@ -408,8 +408,14 @@ bool PageCommands::live(const char *line) {
     // stay what the signature says.
     const bool fresh = !page->live[cell];
     if (fresh && !page->new_live(cell)) {
-        reply().println("ERR live memory");
-        return true;
+        // No room for another. The pages that are not on screen give theirs up,
+        // oldest first, and this key tries again: what you are looking at is
+        // worth more than what you are not.
+        while (!page->live[cell] && pages.free_lives(page)) page->new_live(cell);
+        if (!page->live[cell]) {
+            reply().println("ERR live memory");
+            return true;
+        }
     }
     uint16_t *image = page->live[cell];
     if (fresh) memcpy(image, showing, KeyImage::bytes());

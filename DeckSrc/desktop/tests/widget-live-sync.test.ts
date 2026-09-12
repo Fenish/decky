@@ -1,4 +1,5 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { createConfig } from "../src/shared/config";
 import type { DeckConfig } from "../src/shared/config";
@@ -56,6 +57,8 @@ const fixture = vi.hoisted(() => ({
         commands: [] as string[],
         // A command the deck refuses, for a load that fails part way.
         refuse: null as string | null,
+        // How many live pictures it has room for at once; null for as many as asked.
+        liveRoom: null as number | null,
         looks: new Set<number>(),
         // The keys it turns itself: armed by WHEEL or WHEELAT.
         armed: new Set<number>(),
@@ -304,6 +307,10 @@ vi.mock("../src/main/device/serial", async () => {
                     const [id, signature, target, base] = header.split(" ").slice(1).map(Number);
                     const copy = find(id!, signature!);
                     if (!copy) return { ok: false, message: "ERR invalid live patch" };
+                    // Room for only so many live pictures, as PSRAM is.
+                    const held = deck.copies.reduce((sum, item) => sum + item.live.size, 0);
+                    if (deck.liveRoom !== null && !copy.live.has(target!) && held >= deck.liveRoom)
+                        return { ok: false, message: "ERR live memory" };
                     // Against what the key shows; into its live picture.
                     const shownNow = copy.live.get(target!) ?? copy.keys[target!]!;
                     if (base && actual.crc32(shownNow) !== base)
@@ -389,7 +396,8 @@ const DICE = { type: "dice", mode: "list", options: "a, b, c, d, e, f" } as cons
 
 afterAll(async () => {
     fixture.events.get("before-quit")?.({ preventDefault: () => {} });
-    await rm(fixture.folder, { recursive: true, force: true });
+    // A profile or a widget state saved on the way out can still be in flight.
+    await rm(fixture.folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 });
 });
 
 describe("widget keys on the deck", () => {
@@ -1150,6 +1158,115 @@ describe("pages on the deck", () => {
         });
         expect(onScreen(7)).toEqual(Array.from(new Uint8Array(BYTES).fill(0x63)));
         await call("config:save", config);
+    });
+
+    it("gives the page you are looking at the deck's last room for a live picture", async () => {
+        const config = (await call("config:get")) as DeckConfig;
+        const widgetKey = (widget: unknown) => ({
+            label: "",
+            icon: "Clock",
+            color: "#eee8da",
+            action: { kind: "widget" as const, widget: widget as never },
+        });
+        const next: DeckConfig = structuredClone(config);
+        next.pages.push(
+            {
+                id: "front",
+                name: "Front",
+                parentId: "home",
+                keys: { 1: widgetKey({ type: "counter", start: 0, step: 1 }) },
+            },
+            {
+                id: "behind",
+                name: "Behind",
+                parentId: "home",
+                keys: {
+                    2: widgetKey({ type: "counter", start: 0, step: 1 }),
+                    3: widgetKey({ type: "counter", start: 0, step: 1 }),
+                },
+            },
+        );
+        next.activePageId = "front";
+        await call("config:save", next);
+        const saved = (await call("config:get")) as DeckConfig;
+        const pages = saved.pages.map((page) => ({
+            pageId: page.id,
+            frames: black(),
+            toggleFrames: [],
+        }));
+        expect(await call("pages:cache", pages)).toMatchObject({ ok: true });
+        const copyOf = (id: string) => {
+            const index = saved.pages.findIndex((page) => page.id === id);
+            return fixture.deck.copies.findLast((item) => item.id === index && item.complete)!;
+        };
+        // The page not shown fills the deck's room for live pictures.
+        for (const cell of [2, 3])
+            expect(
+                await call("deck:live", "behind", cell, new Uint8Array(BYTES).fill(0x30 + cell)),
+            ).toMatchObject({ ok: true });
+        expect(copyOf("behind").live.size).toBe(2);
+        // As full as it is now: the next live picture has nowhere to go until
+        // something gives one back.
+        const held = () => fixture.deck.copies.reduce((sum, item) => sum + item.live.size, 0);
+        fixture.deck.liveRoom = held();
+        // Now the page in front needs one: what is behind gives its up.
+        const picture = new Uint8Array(BYTES).fill(0x77);
+        expect(await call("deck:live", "front", 1, picture)).toMatchObject({ ok: true });
+        expect(Array.from(copyOf("front").live.get(1) ?? [])).toEqual(Array.from(picture));
+        expect(copyOf("behind").live.size).toBe(0);
+        // While the deck is crowded, pages not shown are left alone rather
+        // than taking the room back from under the page in front.
+        const before = copyOf("behind").live.size;
+        expect(
+            await call("deck:live", "behind", 2, new Uint8Array(BYTES).fill(0x31)),
+        ).toMatchObject({ message: "The deck is short of memory." });
+        expect(copyOf("behind").live.size).toBe(before);
+        fixture.deck.liveRoom = null;
+        await call("config:save", config);
+    });
+
+    it("gives each profile its own pages and its own counters", async () => {
+        const states = async () => (await call("widgets:states")) as Record<string, unknown>;
+        const list = async () =>
+            (await call("profiles:list")) as { active: string; profiles: { id: string }[] };
+        // The one profile every PC starts with, holding what the tests have counted.
+        const first = await list();
+        expect(first.profiles).toHaveLength(1);
+        await call("action:run", "home", 4);
+        const counted = (await states())["home:4"];
+        expect(counted).toBeDefined();
+        // Saving is put off a moment; the switch must not lose it.
+        await sleep(600);
+        const added = (await call("profiles:add", "Streaming")) as {
+            profiles: { id: string; name: string }[];
+        };
+        const other = added.profiles.find((item) => item.name === "Streaming")!;
+        const mark = fixture.deck.commands.length;
+        await call("profiles:use", other.id);
+        expect((await list()).active).toBe(other.id);
+        // A profile of its own: nothing counted here yet.
+        expect((await states())["home:4"]).toBeUndefined();
+        // The deck starts a fresh session for it: HELLO, so the pages and live
+        // pictures of the profile left behind are not still taking its memory.
+        const saved2 = (await call("config:get")) as DeckConfig;
+        await call(
+            "pages:cache",
+            saved2.pages.map((page) => ({ pageId: page.id, frames: black(), toggleFrames: [] })),
+        );
+        expect(
+            fixture.deck.commands.slice(mark).filter((line) => line.startsWith("HELLO")),
+        ).toHaveLength(1);
+        expect(fixture.deck.copies.every((copy) => copy.live.size === 0)).toBe(true);
+        await call("profiles:use", first.active);
+        expect((await states())["home:4"]).toEqual(counted);
+        // It is written down, so the next start opens the same one.
+        const saved = JSON.parse(
+            await readFile(join(fixture.folder, "profiles.json"), "utf8"),
+        ) as Record<string, unknown>;
+        expect(saved.active).toBe(first.active);
+        expect((saved.profiles as unknown[]).length).toBe(2);
+        await call("profiles:remove", other.id);
+        expect((await list()).profiles).toHaveLength(1);
     });
 
     it("goes Back to the page a page was opened from, else to its parent", async () => {

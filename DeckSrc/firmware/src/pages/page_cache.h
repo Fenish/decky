@@ -36,6 +36,12 @@ public:
     void retire_others(const Page &committed);
     // Every copy's live pictures and text go: they are the session's.
     void drop_lives();
+    // Room for a live picture, taken from a page that is not on screen: the
+    // oldest copy that is neither shown, nor being built, nor `keep` gives up
+    // the live pictures it holds. False when there is nothing left to give.
+    // The desktop learns of it the usual way - its next patch for such a key
+    // is refused on the base CRC, and it sends the whole key again.
+    bool free_lives(const Page *keep);
 
     Page *active = nullptr;   // the copy shown
     Page *pending = nullptr;  // the version being built

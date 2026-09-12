@@ -60,6 +60,13 @@ export const OVERLAY_KINDS = Object.keys(OVERLAYS) as OverlayKind[];
 const TRACE_MS = 10_000;
 /** And how often one that keeps drawing the very picture the deck holds. */
 const QUIET_MS = 60_000;
+/**
+ * How long the deck counts as short of room after it refuses a live picture.
+ * While it does, pages it is not showing are left as they are - one page's
+ * widgets are worth more than fifteen hidden ones - and it is tried again
+ * after this, since a page opened or dropped since may have freed room.
+ */
+const CROWDED_MS = 60_000;
 
 type Copies<T> = Map<string, Map<number, Map<number, T>>>;
 
@@ -81,6 +88,9 @@ export class LiveKeys {
     // The newest picture asked for each widget key, until its turn to be sent: a
     // wheel turned faster than its patches travel skips the pictures between.
     private readonly liveQueue = new Map<string, [frame: unknown, overlays: unknown]>();
+    // Until when the deck counts as short of room for live pictures: it said so
+    // (ERR live memory) at CROWDED_MS ago or less.
+    private crowdedUntil = 0;
 
     // What became of a key's live pictures lately, for deck.log: one line a
     // key every TRACE_MS, so a key that stopped showing what it should says
@@ -161,6 +171,44 @@ export class LiveKeys {
         signature: number,
     ): Map<number, number> | undefined {
         return this.liveOverlays[kind].get(pageId)?.get(signature);
+    }
+
+    /** Whether the deck has lately said it has no room for another live picture. */
+    private get crowded(): boolean {
+        return Date.now() < this.crowdedUntil;
+    }
+
+    /**
+     * Take back every live picture the deck is holding for a page it is not
+     * showing, so the page it is showing can have one. True when anything was
+     * given back. The pages that lose theirs are drawn again as they are the
+     * next time they are opened.
+     */
+    private async freeHiddenPages(keep: string): Promise<boolean> {
+        const { displayed } = this.pages;
+        let freed = false;
+        for (const [pageId, copies] of this.livePatched) {
+            if (pageId === keep) continue;
+            const index = this.config.pages.findIndex((page) => page.id === pageId);
+            for (const [signature, cells] of copies) {
+                // Never the copy on screen: that is what this is protecting.
+                if (displayed?.pageId === pageId && displayed.signature === signature) continue;
+                for (const cell of [...cells.keys()]) {
+                    if (index < 0) break;
+                    const reply = await this.session.link.command(
+                        `LIVE ${index} ${signature} ${cell} 0 0 0`,
+                        2000,
+                    );
+                    if (!reply.ok) continue;
+                    cells.delete(cell);
+                    for (const kind of OVERLAY_KINDS)
+                        this.overlaysOf(kind, pageId, signature)?.delete(cell);
+                    freed = true;
+                }
+            }
+        }
+        if (freed) this.log("live: gave back the pictures of pages not shown, for want of room");
+        return freed;
     }
 
     /** The deck's copy `signature` of a page shows its own pictures alone now. */
@@ -244,9 +292,15 @@ export class LiveKeys {
         const over = this.validOverlays(overlays);
         const index = this.config.pages.findIndex((page) => page.id === pageId);
         const record = this.pages.uploaded.get(pageId);
+        const shown = this.config.activePageId === pageId;
         // Pages not shown are kept up to date too where the deck takes it (warm=1),
-        // so one opens as it is now.
-        const reachable = this.config.activePageId === pageId || this.status.identity.warm === true;
+        // so one opens as it is now - but not while the deck is short of room
+        // for live pictures: the page in front of you comes first then.
+        const reachable = shown || (this.status.identity.warm === true && !this.crowded);
+        if (!shown && !reachable && this.crowded) {
+            this.trace(pageId, Number(cell), "the deck has no room for pages not shown");
+            return { ok: true, message: "The deck is short of memory." };
+        }
         if (!this.pages.deviceReady || !reachable || index < 0 || !record) {
             this.trace(
                 pageId,
@@ -402,6 +456,14 @@ export class LiveKeys {
         let reply = await send(encodeLivePatch(base, next, width, height), crc32(base));
         if (!reply.ok && reply.message.includes("live base"))
             reply = await send(encodeLivePatch(null, next, width, height), 0);
+        // The deck has no room for another live picture. Give up what the
+        // pages not shown are holding - the page in front of you matters more -
+        // and let this key have another go with the room that frees.
+        if (!reply.ok && reply.message.includes("live memory")) {
+            this.crowdedUntil = Date.now() + CROWDED_MS;
+            if (await this.freeHiddenPages(pageId))
+                reply = await send(encodeLivePatch(null, next, width, height), 0);
+        }
         this.trace(pageId, cell, reply.ok ? "sent" : `the deck refused it: ${reply.message}`);
         if (reply.ok) patches.set(cell, next);
         if (reply.ok) this.wheels.pictureSent(pageId, cell);
