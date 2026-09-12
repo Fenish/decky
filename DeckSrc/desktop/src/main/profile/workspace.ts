@@ -4,11 +4,11 @@
  * states, widgets and what the deck holds in line with it.
  *--------------------------------------------------------------*/
 
-import { dialog } from "electron";
+import { app as electron, dialog } from "electron";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { duplicateKey, moveKey } from "../../shared/key-layout";
 import type { KeyLocation } from "../../shared/key-layout";
-import { BACK_CELL, retireWidgets, validateConfig } from "../../shared/config";
+import { BACK_CELL, validateConfig } from "../../shared/config";
 import type { DeckConfig, KeyStates } from "../../shared/config";
 import type { Widget } from "../../shared/widgets";
 import type { Reply } from "../../shared/api";
@@ -18,13 +18,32 @@ import type { KeyStateStore } from "../actions/key-state";
 import type { ActionRunner } from "../actions/runner";
 import type { MainWindow } from "../app/main-window";
 import { saveConfig } from "../config/store";
+import { INTEGRATIONS } from "../../shared/integrations/registry";
+import {
+    askedValues,
+    saveIntegrationValues,
+    travellingValues,
+} from "../integrations/settings-store";
+import type { ProfileReport } from "../../shared/api";
+import {
+    BUNDLE_MAX,
+    packBundle,
+    placeFiles,
+    PROFILE_EXTENSION,
+    readProfileFiles,
+    unpackBundle,
+} from "./bundle";
+import type { ProfileBundle } from "./bundle";
+import { reportOf, reportOfProfile } from "./report";
 import type { DeckPages } from "../pages/deck-pages";
 import type { PageSync } from "../pages/page-sync";
 import type { IntegrationService } from "../integrations/integration";
 import type { WidgetReadings } from "../widgets/readings";
 import type { WidgetPresses } from "../widgets/presses";
 import type { WidgetStore } from "../widgets/widget-state";
+import { loadConfig } from "../config/store";
 import type { Profile } from "./profile";
+import type { ProfileEntry, Profiles } from "./profiles";
 
 const location = (value: unknown): KeyLocation => {
     if (
@@ -41,9 +60,18 @@ export class Workspace {
     private saveQueue: Promise<unknown> = Promise.resolve();
     /** Each page opened, and the page it was opened from, for its Back; gone when Decky quits. */
     private readonly cameFrom = new Map<string, string>();
+    /** The .deckyprofile last looked at, until it is kept or another is opened. */
+    private waiting: ProfileBundle | null = null;
+    /**
+     * A profile opened with Decky and not yet answered. The window is told,
+     * and can ask for it too: a file double-clicked while Decky was closed
+     * arrives before the window is listening.
+     */
+    private offered: ProfileReport | null = null;
 
     constructor(
         private readonly profile: Profile,
+        private readonly profiles: Profiles,
         private readonly pages: DeckPages,
         private readonly pageSync: PageSync,
         private readonly presses: WidgetPresses,
@@ -91,6 +119,59 @@ export class Workspace {
         await write;
         this.window.send("config:changed", profile.config);
         return profile.config;
+    }
+
+    /** The profiles there are, and which is in use. */
+    profileList(): { active: string; profiles: ProfileEntry[] } {
+        return { active: this.profiles.active.id, profiles: this.profiles.all() };
+    }
+
+    /**
+     * Switch to another profile: its pages, what its widgets counted and the
+     * apps it talks to all come from its own folder. What belongs to the deck
+     * - its pairing, its firmware - is not a profile's and stays.
+     */
+    async useProfile(id: unknown): Promise<DeckConfig> {
+        if (typeof id !== "string" || !this.profiles.has(id)) throw new Error("No such profile.");
+        if (id === this.profiles.active.id) return this.profile.config;
+        await this.profiles.use(id);
+        this.profile.path = this.profiles.configPath();
+        const config = await loadConfig(this.profile.path, "");
+        await this.widgetStore.usePath(this.profiles.widgetsPath());
+        await Promise.all(
+            Object.entries(this.readings.integrations).map(([app, service]) =>
+                service.usePath(this.profiles.integrationPath(app)),
+            ),
+        );
+        // The deck holds the last profile's pages: everything is drawn again.
+        this.pageSync.forget();
+        await this.persist(config);
+        this.window.send("profiles:changed", this.profileList());
+        return this.profile.config;
+    }
+
+    /** A profile of its own, empty; the caller switches to it if it wants. */
+    async addProfile(name: unknown): Promise<{ active: string; profiles: ProfileEntry[] }> {
+        await this.profiles.add(typeof name === "string" ? name : "Profile");
+        this.window.send("profiles:changed", this.profileList());
+        return this.profileList();
+    }
+
+    async renameProfile(
+        id: unknown,
+        name: unknown,
+    ): Promise<{ active: string; profiles: ProfileEntry[] }> {
+        if (typeof id !== "string" || typeof name !== "string") throw new Error("No such profile.");
+        await this.profiles.rename(id, name);
+        this.window.send("profiles:changed", this.profileList());
+        return this.profileList();
+    }
+
+    async removeProfile(id: unknown): Promise<{ active: string; profiles: ProfileEntry[] }> {
+        if (typeof id !== "string") throw new Error("No such profile.");
+        await this.profiles.remove(id);
+        this.window.send("profiles:changed", this.profileList());
+        return this.profileList();
     }
 
     /** Open a page - from a page key, or the window - remembering the one it was opened from. */
@@ -210,41 +291,138 @@ export class Workspace {
         return { config: await this.persist(result.config), cell: result.cell };
     }
 
-    async exportProfile(): Promise<Reply> {
+    /**
+     * The profile in use as one file: its pages, what the apps it talks to
+     * are set to, and the scripts its keys run. Nothing secret goes in
+     * (bundle.ts); a script too large or gone is named in the reply.
+     */
+    /**
+     * Any profile as one file - not only the one in use: its pages, what the
+     * apps it talks to are set to, and the scripts its keys run. Nothing
+     * secret goes in (bundle.ts); a script gone or too large is named in the
+     * reply.
+     */
+    async exportProfile(id?: unknown): Promise<Reply> {
+        const which =
+            typeof id === "string" && this.profiles.has(id) ? id : this.profiles.active.id;
+        const entry = this.profiles.all().find((item) => item.id === which)!;
         const result = await dialog.showSaveDialog(this.window.browserWindow!, {
-            defaultPath: "Decky-profile.json",
-            filters: [{ name: "Decky profile", extensions: ["json"] }],
+            defaultPath: `${entry.name.replace(/[<>:"/\\?*|]/g, "-")}${PROFILE_EXTENSION}`,
+            filters: [{ name: "Decky profile", extensions: [PROFILE_EXTENSION.slice(1)] }],
         });
         if (!result.filePath) return { ok: false, message: "Export cancelled." };
-        await writeFile(result.filePath, JSON.stringify(this.profile.config, null, 2), "utf8");
-        return { ok: true, message: "Profile exported." };
+        // The one in use is freshest in memory; another is read from its folder.
+        const config =
+            which === this.profiles.active.id
+                ? this.profile.config
+                : await loadConfig(this.profiles.configPath(which), "");
+        const { files, missing } = await readProfileFiles(config);
+        const integrations: Record<string, Record<string, string>> = {};
+        for (const app of Object.values(INTEGRATIONS))
+            integrations[app.id] = await travellingValues(
+                this.profiles.integrationPath(app.id, which),
+                app,
+            );
+        const bytes = packBundle({
+            meta: { name: entry.name, madeAt: Date.now(), app: appVersion() },
+            profile: config,
+            integrations,
+            files,
+        });
+        await writeFile(result.filePath, bytes);
+        return {
+            ok: true,
+            message: missing.length
+                ? `${entry.name} exported, without ${missing.length} file(s) that are gone or too large.`
+                : `${entry.name} exported.`,
+        };
     }
 
-    async importProfile(): Promise<DeckConfig | null> {
-        const result = await dialog.showOpenDialog(this.window.browserWindow!, {
-            properties: ["openFile"],
-            filters: [{ name: "Decky profile", extensions: ["json"] }],
-        });
-        const path = result.filePaths[0];
-        if (!path) return null;
-        if ((await stat(path)).size > 24 * 1024 * 1024) throw new Error("Profile exceeds 24 MB.");
-        const next: unknown = JSON.parse(await readFile(path, "utf8"));
-        retireWidgets(next);
-        validateConfig(next);
-        const answer = await dialog.showMessageBox(this.window.browserWindow!, {
-            type: "question",
-            message: `Replace your pages with ${next.pages.length} imported pages?`,
-            detail: "Imported keys can launch programs and scripts when pressed. Your current profile will be backed up automatically.",
-            buttons: ["Cancel", "Import profile"],
-            defaultId: 0,
-            cancelId: 0,
-        });
-        if (answer.response !== 1) return null;
-        await writeFile(
-            `${this.profile.path}.before-import-${Date.now()}.json`,
-            JSON.stringify(this.profile.config),
-            "utf8",
-        );
-        return this.persist(next);
+    /**
+     * Look inside a .deckyprofile: the file is read and held, and what is in
+     * it goes to the window to be shown. Nothing is written until the window
+     * asks for it (takeProfile). `path` comes from a file opened with Decky;
+     * without one, the window is asking to choose a file.
+     */
+    async inspectFile(path?: unknown): Promise<ProfileReport | null> {
+        let file = typeof path === "string" ? path : "";
+        if (!file) {
+            const result = await dialog.showOpenDialog(this.window.browserWindow!, {
+                properties: ["openFile"],
+                filters: [{ name: "Decky profile", extensions: [PROFILE_EXTENSION.slice(1)] }],
+            });
+            file = result.filePaths[0] ?? "";
+        }
+        if (!file) return null;
+        if ((await stat(file)).size > BUNDLE_MAX) throw new Error("That profile is too large.");
+        const bundle = unpackBundle(await readFile(file));
+        this.waiting = bundle;
+        return reportOf(bundle);
+    }
+
+    /**
+     * A .deckyprofile opened with Decky: looked inside, kept for the window,
+     * and offered as soon as there is a window to offer it to.
+     */
+    async offerFile(path: string): Promise<void> {
+        this.offered = await this.inspectFile(path);
+        if (this.offered) this.window.sendIfOpen("profiles:offer", this.offered);
+    }
+
+    /** The profile waiting to be answered, if one was opened with Decky. */
+    waitingProfile(): ProfileReport | null {
+        return this.offered;
+    }
+
+    /** What another profile of your own holds, before switching to it. */
+    async inspectProfile(id: unknown): Promise<ProfileReport> {
+        if (typeof id !== "string" || !this.profiles.has(id)) throw new Error("No such profile.");
+        const entry = this.profiles.all().find((item) => item.id === id)!;
+        const config =
+            id === this.profiles.active.id
+                ? this.profile.config
+                : await loadConfig(this.profiles.configPath(id), "");
+        const integrations: Record<string, Record<string, string>> = {};
+        for (const app of Object.values(INTEGRATIONS))
+            integrations[app.id] = await travellingValues(
+                this.profiles.integrationPath(app.id, id),
+                app,
+            );
+        return reportOfProfile(entry.name, config, integrations);
+    }
+
+    /**
+     * Keep the profile last looked at: it becomes one of your own, with its
+     * scripts in its own folder and its keys pointing at them there. It never
+     * touches the profile in use - the window offers to switch afterwards.
+     */
+    async takeProfile(): Promise<{ id: string; name: string }> {
+        const bundle = this.waiting;
+        if (!bundle) throw new Error("Open a profile first.");
+        const entry = await this.profiles.add(bundle.meta.name);
+        const { config } = await placeFiles(bundle, this.profiles.filesFolder(entry.id));
+        await saveConfig(this.profiles.configPath(entry.id), config);
+        for (const app of Object.values(INTEGRATIONS)) {
+            const values = askedValues(app, {}, bundle.integrations[app.id] ?? {});
+            if (values)
+                await saveIntegrationValues(
+                    this.profiles.integrationPath(app.id, entry.id),
+                    app,
+                    values,
+                );
+        }
+        this.waiting = null;
+        this.offered = null;
+        this.window.send("profiles:changed", this.profileList());
+        return { id: entry.id, name: entry.name };
+    }
+}
+
+/** Which Decky made a profile, for the file to say. */
+function appVersion(): string {
+    try {
+        return electron.getVersion();
+    } catch {
+        return "";
     }
 }

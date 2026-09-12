@@ -131,11 +131,17 @@ export class ObsService implements IntegrationService {
 
     constructor(
         private readonly store: WidgetStore,
-        private readonly settingsPath: string,
+        private settingsPath: string,
         private readonly finder: ObsFinder,
         private readonly onStatus: (status: IntegrationStatus) => void,
         private readonly openSocket?: (url: string) => ObsSocket,
     ) {}
+
+    /** The settings of the profile now in use, in place of the last one's. */
+    async usePath(path: string): Promise<void> {
+        this.settingsPath = path;
+        await this.load();
+    }
 
     async load(): Promise<void> {
         this.values = await loadIntegrationValues(this.settingsPath, obsIntegration);

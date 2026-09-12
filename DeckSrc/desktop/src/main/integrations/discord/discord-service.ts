@@ -308,6 +308,17 @@ export class DiscordService implements IntegrationService {
         this.visit = parts.visit ?? ((url) => shell.openExternal(url));
     }
 
+    /**
+     * The settings of the profile now in use: its own permission and its own
+     * notifications, read in place of the last profile's.
+     */
+    async usePath(path: string): Promise<void> {
+        this.parts.settingsPath = path;
+        this.inbox = { unread: 0 };
+        this.token = "";
+        await this.load();
+    }
+
     async load(): Promise<void> {
         try {
             const saved = JSON.parse(await readFile(this.parts.settingsPath, "utf8")) as Data;

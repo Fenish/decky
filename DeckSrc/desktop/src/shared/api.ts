@@ -281,8 +281,23 @@ export interface DeckApi {
     navigate(pageId: string): Promise<DeckConfig>;
     /** A page's Back: the page it was opened from, else its parent. */
     back(pageId: string): Promise<DeckConfig>;
-    exportConfig(): Promise<Reply>;
-    importConfig(): Promise<DeckConfig | null>;
+    /** The profiles on this PC, and switching between them. */
+    profiles(): Promise<ProfileSet>;
+    useProfile(id: string): Promise<DeckConfig>;
+    addProfile(name: string): Promise<ProfileSet>;
+    renameProfile(id: string, name: string): Promise<ProfileSet>;
+    removeProfile(id: string): Promise<ProfileSet>;
+    onProfiles(handler: (profiles: ProfileSet) => void): () => void;
+    /** A .deckyprofile was opened with Decky: what is in it, to offer. */
+    onProfileOffer(handler: (report: ProfileReport) => void): () => void;
+    /** A profile as one file; the one in use without an id. */
+    exportConfig(id?: string): Promise<Reply>;
+    /** Look inside a .deckyprofile - one chosen, or one opened with Decky - and keep it. */
+    inspectProfileFile(path?: string): Promise<ProfileReport | null>;
+    inspectProfile(id: string): Promise<ProfileReport>;
+    takeProfile(): Promise<{ id: string; name: string }>;
+    /** A profile opened with Decky that has not been answered yet. */
+    waitingProfile(): Promise<ProfileReport | null>;
     syncPage(
         pageId: string,
         frames: Uint8Array[],
@@ -291,6 +306,45 @@ export interface DeckApi {
     onEvent(handler: (event: DeckEvent) => void): () => void;
     onConfig(handler: (config: DeckConfig) => void): () => void;
     onActivity(handler: (activity: Activity) => void): () => void;
+}
+/** A program or script a profile's key would run. */
+export interface ProfileRun {
+    path: string;
+    /** A script the profile carries, or a program it expects to be installed. */
+    kind: "script" | "program";
+    /** Whether the file itself came with the profile. */
+    carried: boolean;
+}
+/**
+ * What is in a profile, shown before it is imported or switched to: what it
+ * came from, what it holds, and - the part worth reading - everything its
+ * keys would run.
+ */
+export interface ProfileReport {
+    name: string;
+    /** When it was exported, and by which Decky; both 0 or empty for a profile of your own. */
+    madeAt: number;
+    app: string;
+    pages: number;
+    keys: number;
+    /** Its widgets by type, the ones this Decky no longer has marked. */
+    widgets: { type: string; label: string; count: number; retired: boolean }[];
+    runs: ProfileRun[];
+    /** The apps it is set up for; `secrets` says a password must be typed again. */
+    apps: { id: string; name: string; settings: number; secrets: boolean }[];
+    files: { count: number; bytes: number };
+}
+/** A profile as the window lists it. */
+export interface ProfileCard {
+    id: string;
+    name: string;
+    madeAt: number;
+    usedAt: number;
+}
+/** The profiles there are, and which is in use. */
+export interface ProfileSet {
+    active: string;
+    profiles: ProfileCard[];
 }
 declare global {
     interface Window {

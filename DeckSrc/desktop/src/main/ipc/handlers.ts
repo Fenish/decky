@@ -77,8 +77,17 @@ export function registerHandlers(parts: HandlerParts): void {
         validateConfig(value);
         return workspace.persist(value);
     });
-    handle("config:export", () => workspace.exportProfile());
-    handle("config:import", () => workspace.importProfile());
+    handle("profiles:list", () => workspace.profileList());
+    handle("profiles:use", (id) => workspace.useProfile(id));
+    handle("profiles:add", (name) => workspace.addProfile(name));
+    handle("profiles:rename", (id, name) => workspace.renameProfile(id, name));
+    handle("profiles:remove", (id) => workspace.removeProfile(id));
+    handle("config:export", (id) => workspace.exportProfile(id));
+    // Importing is two steps: look inside, then keep it.
+    handle("profiles:inspectFile", (path) => workspace.inspectFile(path));
+    handle("profiles:inspect", (id) => workspace.inspectProfile(id));
+    handle("profiles:take", () => workspace.takeProfile());
+    handle("profiles:waiting", () => workspace.waitingProfile());
     handle("page:navigate", (pageId) => workspace.navigate(pageId));
     handle("page:back", (pageId) => workspace.back(pageId));
     handle("keys:move", (source, target) => workspace.move(source, target));

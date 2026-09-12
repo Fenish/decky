@@ -28,7 +28,10 @@ import { LogFile } from "./logging/log-file";
 import { DeckPages } from "./pages/deck-pages";
 import { PageSync } from "./pages/page-sync";
 import { Profile } from "./profile/profile";
+import { PROFILE_EXTENSION } from "./profile/bundle";
+import { Profiles } from "./profile/profiles";
 import { Workspace } from "./profile/workspace";
+import { registerProfileType } from "./system/file-type";
 import { WindowsHost } from "./system/windows-host";
 import { Updates } from "./updates/updates";
 import { DeckWheels } from "./widgets/deck-wheels";
@@ -61,9 +64,34 @@ let readings: WidgetReadings | null = null;
 // Decky on Discord, once ready; quitting lets it go.
 let presence: RichPresence | null = null;
 
+/**
+ * A .deckyprofile opened with Decky - double-clicked, or dropped on it - from
+ * the command line that started this Decky, or from the one that tried to
+ * start a second. It waits here until the window and the deck are up, and is
+ * then offered to be imported; nothing is written unless it is accepted.
+ */
+let openWith = profileFileIn(process.argv);
+let offerFile: ((path: string) => void) | null = null;
+
+function profileFileIn(argv: string[]): string {
+    return argv.slice(1).find((arg) => arg.toLowerCase().endsWith(PROFILE_EXTENSION)) ?? "";
+}
+
+/** The file waiting to be offered, once there is somewhere to offer it. */
+function offerWaiting(): void {
+    if (!openWith || !offerFile) return;
+    const path = openWith;
+    openWith = "";
+    offerFile(path);
+}
+
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-    app.on("second-instance", () => window.restore());
+    app.on("second-instance", (_event, argv) => {
+        window.restore();
+        openWith = profileFileIn(argv) || openWith;
+        offerWaiting();
+    });
     void app.whenReady().then(start);
     app.on("window-all-closed", () => app.quit());
     app.on("before-quit", (event) =>
@@ -83,10 +111,14 @@ else {
 
 async function start(): Promise<void> {
     const folder = app.getPath("userData");
-    const profile = new Profile(join(folder, "decky.json"));
+    // The profiles on this PC, and the one in use: everything a setup owns is
+    // read from its folder (profiles.ts).
+    const profiles = new Profiles(folder);
+    await profiles.load();
+    const profile = new Profile(profiles.configPath());
     await session.loadWifiPair(join(folder, "wifi-pair.json"));
-    // Widget state (counts, running timers), saved beside the profile.
-    const widgetStore = new WidgetStore(join(folder, "widgets.json"), (states) =>
+    // Widget state (counts, running timers), saved in the profile's folder.
+    const widgetStore = new WidgetStore(profiles.widgetsPath(), (states) =>
         window.sendIfOpen("widgets:states", states),
     );
     await widgetStore.load();
@@ -100,7 +132,7 @@ async function start(): Promise<void> {
     // The apps Decky talks to, each with its settings under integrations/.
     const reportApp = (status: IntegrationStatus): void =>
         window.sendIfOpen("integration:status", status);
-    const appSettings = (id: string): string => join(folder, "integrations", `${id}.json`);
+    const appSettings = (id: string): string => profiles.integrationPath(id);
     const integrations: IntegrationServices = {
         obs: new ObsService(widgetStore, appSettings("obs"), OBS_FINDER, reportApp),
         discord: new DiscordService({
@@ -145,6 +177,7 @@ async function start(): Promise<void> {
     const presses = new WidgetPresses(profile, widgetStore, widgetReadings, wheels, window);
     const workspace = new Workspace(
         profile,
+        profiles,
         pages,
         pageSync,
         presses,
@@ -194,6 +227,25 @@ async function start(): Promise<void> {
         () => pages.cacheInitialized,
         () => pageSync.resetDeviceCache(),
     );
+    // A profile double-clicked in Explorer: looked inside, and offered to the
+    // window once it is there to ask.
+    offerFile = (path) => {
+        void workspace.offerFile(path).catch((error: unknown) =>
+            window.sendIfOpen("action:activity", {
+                at: Date.now(),
+                label: "Profile",
+                ok: false,
+                message: String(error),
+            }),
+        );
+    };
+    // Windows opens a .deckyprofile with this Decky. The installer says so
+    // too; this keeps it true afterwards, and costs nothing when it already is.
+    if (app.isPackaged && process.platform === "win32")
+        void registerProfileType(
+            process.execPath,
+            join(process.resourcesPath, "profile.ico"),
+        ).catch(() => {});
     session.watchPorts();
     session.link.onNoise = (line) => log.write(line);
     session.link.onEvent = deckEventHandler({
@@ -210,4 +262,5 @@ async function start(): Promise<void> {
         presence: richPresence,
     });
     await window.load();
+    offerWaiting();
 }

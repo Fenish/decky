@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Download, RefreshCw, Upload, X } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import type { DeckConfig } from "../../../../shared/config";
 import { DiscordSettings } from "./discord-settings";
 import { WifiSettings } from "./wifi-settings";
@@ -8,7 +8,6 @@ export function SettingsPanel({
     config,
     busy,
     save,
-    onImport,
     sync,
     onClose,
     notify,
@@ -18,7 +17,6 @@ export function SettingsPanel({
     config: DeckConfig;
     busy: boolean;
     save: (config: DeckConfig) => Promise<void>;
-    onImport: (config: DeckConfig) => void;
     sync: () => Promise<void>;
     onClose: () => void;
     notify: (message: string) => void;
@@ -88,30 +86,6 @@ export function SettingsPanel({
                 </div>
                 <DiscordSettings notify={notify} />
                 <div className="settings-actions">
-                    <button
-                        onClick={() =>
-                            void window.deck
-                                .exportConfig()
-                                .then((reply) => notify(reply.message))
-                                .catch((e) => notify(String(e)))
-                        }
-                    >
-                        <Download size={19} />
-                        Export profile
-                    </button>
-                    <button
-                        onClick={() =>
-                            void window.deck
-                                .importConfig()
-                                .then((next) => {
-                                    if (next) onImport(next);
-                                })
-                                .catch((e) => notify(String(e)))
-                        }
-                    >
-                        <Upload size={19} />
-                        Import profile
-                    </button>
                     <button disabled={busy} onClick={() => void sync()}>
                         <RefreshCw size={19} className={busy ? "spin" : ""} />
                         {busy ? "Syncing…" : "Sync keys"}

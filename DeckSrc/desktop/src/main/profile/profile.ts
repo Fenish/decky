@@ -1,7 +1,7 @@
 /*---------------------------------------------------------------
- * The profile as it is now: pages, keys and settings, in memory. It is
- * read from decky.json at start (config/store.ts), and every change goes
- * through Workspace.persist().
+ * The profile as it is now: pages, keys and settings, in memory. It is read
+ * from the profile in use at start (config/store.ts, profiles.ts), and every
+ * change goes through Workspace.persist().
  *--------------------------------------------------------------*/
 
 import { createConfig, isWidgetKey } from "../../shared/config";
@@ -11,8 +11,8 @@ import type { Widget } from "../../shared/widgets";
 export class Profile {
     config: DeckConfig = createConfig();
 
-    /** `path` is decky.json. */
-    constructor(readonly path: string) {}
+    /** `path` is the profile.json of the profile in use; switching moves it. */
+    constructor(public path: string) {}
 
     /** The widget at a key of the profile as it is now, if it still is one. */
     currentWidget(pageId: string, cell: number): Widget | undefined {

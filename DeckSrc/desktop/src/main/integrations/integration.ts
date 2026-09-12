@@ -14,8 +14,10 @@ import type { ObsService } from "./obs/obs-service";
 
 export interface IntegrationService {
     readonly id: IntegrationId;
-    /** Its settings, as saved on this PC. */
+    /** Its settings, as saved for the profile in use. */
     load(): Promise<void>;
+    /** Another profile's settings, from its own folder: read them and follow them. */
+    usePath(path: string): Promise<void>;
     /** Follow the profile: reach the app while any key shows it, and let go without. */
     sync(config: DeckConfig): void;
     status(): IntegrationStatus;

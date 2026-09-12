@@ -1,8 +1,9 @@
 import type { KeyLocation } from "../../../../shared/key-layout";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { ChevronDown, Copy, Layers, MousePointer2, Plus, Settings, X } from "lucide-react";
+import { ChevronDown, Copy, Layers, MousePointer2, Plus, Settings, Users, X } from "lucide-react";
 import type { DeckConfig, KeyConfig, KeyStates } from "../../../../shared/config";
+import type { ProfileReport } from "../../../../shared/api";
 import { BACK_CELL, displayedKey, keyAddress } from "../../../../shared/config";
 import { hotkeysInUse } from "../../../../shared/hotkey-pool";
 import background from "../../assets/dashboard-obsidian.webp";
@@ -17,6 +18,7 @@ import { KeyFace } from "./key-face";
 import { ManagePageDialog, withoutPage } from "./page-dialog";
 import type { PageDialog } from "./page-dialog";
 import { PagesPanel } from "./pages-panel";
+import { ProfilesPanel } from "./profiles-panel";
 import { SettingsPanel } from "./settings-panel";
 import "./dashboard.css";
 interface Selection {
@@ -82,7 +84,7 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
     }: DashboardProps,
     ref,
 ) {
-    const [panel, setPanel] = useState<"key" | "pages" | "settings">("key");
+    const [panel, setPanel] = useState<"key" | "pages" | "profiles" | "settings">("key");
     // Counts requests to bring the Updates section into view; Settings scrolls on each.
     const [revealUpdates, setRevealUpdates] = useState(0);
     const [panelOpen, setPanelOpen] = useState(false);
@@ -95,6 +97,8 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
     const [pageDialog, setPageDialog] = useState<PageDialog | null>(null);
     const [pageName, setPageName] = useState("");
     const [pending, setPending] = useState<(() => void) | null>(null);
+    // A .deckyprofile opened with Decky, waiting to be answered.
+    const [offered, setOffered] = useState<ProfileReport | null>(null);
     const page = config.pages.find((item) => item.id === config.activePageId) ?? config.pages[0]!;
     const dirty = selection?.dirty ?? false;
     const folderClick = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,6 +108,17 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
         },
         [],
     );
+    // One opened while Decky was closed is waiting; one opened while it runs
+    // arrives as it happens. Either opens Profiles on what is in it.
+    useEffect(() => {
+        void window.deck.waitingProfile().then(setOffered);
+        return window.deck.onProfileOffer(setOffered);
+    }, []);
+    useEffect(() => {
+        if (!offered) return;
+        setPanel("profiles");
+        setPanelOpen(true);
+    }, [offered]);
     useEffect(() => {
         const warn = (event: BeforeUnloadEvent): void => {
             if (dirty) {
@@ -164,7 +179,7 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
             setPanelOpen(true);
         });
     };
-    const utility = (next: "pages" | "settings"): void =>
+    const utility = (next: "pages" | "profiles" | "settings"): void =>
         guard(() => {
             setPanel(next);
             setPanelOpen(true);
@@ -492,6 +507,14 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                             <Layers size={24} />
                         </button>
                         <button
+                            aria-label="Profiles"
+                            title="Profiles"
+                            className={panelOpen && panel === "profiles" ? "active" : ""}
+                            onClick={() => utility("profiles")}
+                        >
+                            <Users size={24} />
+                        </button>
+                        <button
                             aria-label="Settings"
                             title="Settings"
                             className={panelOpen && panel === "settings" ? "active" : ""}
@@ -563,15 +586,18 @@ export const Dashboard = forwardRef<DashboardHandle, DashboardProps>(function Da
                             onDelete={(item) => setPageDialog({ kind: "delete", page: item })}
                             onClose={close}
                         />
+                    ) : panel === "profiles" ? (
+                        <ProfilesPanel
+                            offered={offered}
+                            notify={notify}
+                            onSwitched={() => setSelection(null)}
+                            onClose={close}
+                        />
                     ) : panel === "settings" ? (
                         <SettingsPanel
                             config={config}
                             busy={busy}
                             save={save}
-                            onImport={(next) => {
-                                onImport(next);
-                                setSelection(null);
-                            }}
                             sync={sync}
                             onClose={close}
                             notify={notify}

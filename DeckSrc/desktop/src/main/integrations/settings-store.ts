@@ -63,6 +63,21 @@ export async function saveIntegrationValues(
 }
 
 /**
+ * The settings of an app that may travel in an exported profile: what it is
+ * set to, but never a password or a token - those were typed on this PC and
+ * are kept for Windows to encrypt (this file's header). An imported profile
+ * asks for them again.
+ */
+export async function travellingValues(path: string, app: Integration): Promise<IntegrationValues> {
+    const values = await loadIntegrationValues(path, app);
+    return Object.fromEntries(
+        app.fields
+            .filter((field) => !field.secret)
+            .map((field) => [field.key, values[field.key] ?? ""]),
+    );
+}
+
+/**
  * The values a save asks for over the saved ones: each field a string within
  * its length, text trimmed; a secret left null keeps the one saved. Null when
  * the request is not one.

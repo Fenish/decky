@@ -18,6 +18,10 @@ export function installPreviewBridge(): void {
         message: "Open Decky desktop to use device and system actions.",
     });
     let maximized = false;
+    const onlyProfile = {
+        active: "default",
+        profiles: [{ id: "default", name: "Default", madeAt: 0, usedAt: 0 }],
+    };
     const api: DeckApi = {
         wifiStatus: async () => ({
             available: false,
@@ -134,7 +138,22 @@ export function installPreviewBridge(): void {
         runKey: unavailable,
         syncPage: unavailable,
         exportConfig: unavailable,
-        importConfig: async () => null,
+        inspectProfileFile: async () => null,
+        inspectProfile: async () => {
+            throw new Error("Open Decky desktop to use profiles.");
+        },
+        takeProfile: async () => {
+            throw new Error("Open Decky desktop to use profiles.");
+        },
+        // One profile in the browser preview: the one in local storage.
+        profiles: async () => onlyProfile,
+        useProfile: async () => config,
+        addProfile: async () => onlyProfile,
+        renameProfile: async () => onlyProfile,
+        removeProfile: async () => onlyProfile,
+        onProfiles: () => () => {},
+        onProfileOffer: () => () => {},
+        waitingProfile: async () => null,
         pickTarget: async () => {
             throw new Error("File selection is available in Decky desktop.");
         },

@@ -51,9 +51,18 @@ export class WidgetStore {
     private saving: ReturnType<typeof setTimeout> | undefined;
 
     constructor(
-        private readonly path: string,
+        private path: string,
         private readonly changed: (states: WidgetStates) => void,
     ) {}
+
+    /** Another profile's states, from its own folder: what it counted is its. */
+    async usePath(path: string): Promise<void> {
+        clearTimeout(this.saving);
+        this.path = path;
+        this.states = {};
+        await this.load();
+        this.changed(this.snapshot());
+    }
 
     async load(): Promise<void> {
         try {
