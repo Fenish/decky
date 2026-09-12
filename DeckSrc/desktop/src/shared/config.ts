@@ -1,8 +1,9 @@
 import type { IntegrationId } from "./integrations/integration";
+import type { KeptFile, KeptFiles } from "./kept-files";
 import { controlNamed } from "./integrations/registry";
 import { validProgramTarget } from "./programs";
 import type { Widget } from "./widgets";
-import { retireWidget, validWidget } from "./widgets/registry";
+import { retireWidget, validWidget, widgetFiles } from "./widgets/registry";
 export const CELL_COUNT = 15;
 export const BACK_CELL = 10;
 export type Step =
@@ -158,6 +159,68 @@ const ACTION_CHECKS: {
     widget: (v) => validWidget(v.widget),
     app: (v) => controlNamed(v.app, v.control) !== undefined,
 };
+/**
+ * The files a kind of action uses: where they are, and the same action with
+ * them somewhere else. A profile carries the files it can (`carried`) and
+ * rewrites their paths when it is imported, so a setup works on a PC that has
+ * never seen them; a program is installed where it is installed, so only its
+ * path is remembered.
+ *
+ * The table covers every kind, so a new one does not compile until it says
+ * whether it keeps files. Nothing here has to be remembered when a profile is
+ * exported: the export walks this.
+ */
+/** A kind whose file is its `path`: a script it runs, a program it launches. */
+const onePath = <A extends { path: string }>(carried: boolean): KeptFiles<A> => ({
+    paths: (action) => [action.path],
+    moved: (action, moved) => ({ ...action, path: moved(action.path) }),
+    carried,
+});
+export const ACTION_FILES: {
+    [K in Action["kind"]]: KeptFiles<Extract<Action, { kind: K }>> | null;
+} = {
+    hotkey: null,
+    website: null,
+    delay: null,
+    page: null,
+    app: null,
+    // A program is installed, not carried; a script is a file of your own.
+    program: onePath(false),
+    script: onePath(true),
+    // A macro's files are its steps'; a widget's are its kind's (WIDGET_FILES).
+    macro: {
+        paths: (action) => action.steps.flatMap((step) => actionFiles(step).map((f) => f.path)),
+        moved: (action, moved) => ({
+            ...action,
+            steps: action.steps.map((step) => movedAction(step, moved) as Step),
+        }),
+        carried: true,
+    },
+    widget: {
+        paths: (action) => widgetFiles(action.widget).paths(action.widget),
+        moved: (action, moved) => ({
+            ...action,
+            widget: widgetFiles(action.widget).moved(action.widget, moved),
+        }),
+        carried: true,
+    },
+};
+
+/** Every file an action uses, itself and any step or widget it holds. */
+export function actionFiles(action: Action): KeptFile[] {
+    const files = ACTION_FILES[action.kind] as KeptFiles<Action> | null;
+    if (!files) return [];
+    // A macro's steps say for themselves whether they are carried.
+    if (action.kind === "macro") return action.steps.flatMap(actionFiles);
+    return files.paths(action).map((path) => ({ path, carried: files.carried }));
+}
+
+/** The action with every file path it uses through `moved`. */
+export function movedAction(action: Action, moved: (path: string) => string): Action {
+    const files = ACTION_FILES[action.kind] as KeptFiles<Action> | null;
+    return files ? files.moved(action, moved) : action;
+}
+
 /** Whether an action is one step - what a macro holds, and the runner runs. */
 export function isStep(action: Action): action is Step {
     return Object.hasOwn(STEP_CHECKS, action.kind);

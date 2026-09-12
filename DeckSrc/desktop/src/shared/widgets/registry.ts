@@ -28,6 +28,7 @@ import { systemKind } from "./system";
 import { timerKind } from "./timer";
 import { volumeKind } from "./volume";
 import type { IntegrationId } from "../integrations/integration";
+import type { KeptFiles } from "../kept-files";
 import type { DeckTurn, WidgetKind } from "./widget-kind";
 
 type WidgetKinds = { [T in WidgetType]: WidgetKind<Extract<Widget, { type: T }>> };
@@ -56,6 +57,47 @@ export const WIDGET_KINDS: WidgetKinds = {
     "discord-output": discordOutputKind,
     "discord-notifications": discordNotificationsKind,
 };
+
+/**
+ * The files a widget keeps of its own. None do: a widget's picture is drawn,
+ * its settings are text, and an image on a key is its appearance's, kept in
+ * the profile itself. A kind that comes to keep one says so here - the table
+ * covers every type, so it cannot be forgotten when a profile is exported.
+ */
+export const WIDGET_FILES: { [T in WidgetType]: KeptFiles<Extract<Widget, { type: T }>> | null } = {
+    clock: null,
+    timer: null,
+    pomodoro: null,
+    countdown: null,
+    media: null,
+    volume: null,
+    mic: null,
+    system: null,
+    speedtest: null,
+    ping: null,
+    crypto: null,
+    counter: null,
+    dice: null,
+    note: null,
+    "obs-record": null,
+    "obs-stream": null,
+    "discord-channel": null,
+    "discord-call": null,
+    "discord-input": null,
+    "discord-output": null,
+    "discord-notifications": null,
+};
+
+/** How a widget's files are found and moved; the widget itself where it keeps none. */
+export function widgetFiles(widget: Widget): KeptFiles<Widget> {
+    return (
+        (WIDGET_FILES[widget.type] as KeptFiles<Widget> | null) ?? {
+            paths: () => [],
+            moved: (value) => value,
+            carried: true,
+        }
+    );
+}
 
 /** A widget's kind. */
 export function kindOf<W extends Widget>(widget: W): WidgetKind<W> {
